@@ -1,0 +1,7 @@
+{
+  "tenant_id": "tenant-demo",
+  "session_id": "session-demo",
+  "subject_id": "user-demo",
+  "raw_text": "quiero proponer una configuración gobernada para el slice actual",
+  "trace_id": "trace-demo-1"
+}

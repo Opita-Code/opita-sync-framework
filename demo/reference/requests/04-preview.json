@@ -1,0 +1,10 @@
+{
+  "tenant_id": "tenant-demo",
+  "session_id": "session-demo",
+  "subject_id": "user-demo",
+  "contract_id": "contract-demo-preview",
+  "execution_id": "execution-demo-preview",
+  "patchset_ref": "patchset-demo-1",
+  "material_diff_hash": "patchset-hash-demo-1",
+  "preview_scope": "reference-demo"
+}

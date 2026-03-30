@@ -1,0 +1,32 @@
+### 1. Intake turn
+POST http://localhost:8080/v1/intake/turns
+Content-Type: application/json
+
+< ./requests/01-intake-turn.json
+
+### 2. Proposal draft
+POST http://localhost:8080/v1/proposals
+Content-Type: application/json
+
+< ./requests/02-proposal.json
+
+### 3. Patchset candidate
+POST http://localhost:8080/v1/patchsets
+Content-Type: application/json
+
+< ./requests/03-patchset.json
+
+### 4. Preview
+POST http://localhost:8080/v1/previews
+Content-Type: application/json
+
+< ./requests/04-preview.json
+
+### 5. Compile intent
+POST http://localhost:8080/v1/intents/compile
+Content-Type: application/json
+
+< ./requests/05-compile-intent.json
+
+### 6. Replace IDs from responses and inspect
+GET http://localhost:8080/v1/debug/semantic?execution_id={{execution_id}}

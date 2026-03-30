@@ -1,0 +1,15 @@
+{
+  "tenant_id": "tenant-demo",
+  "session_id": "session-demo",
+  "subject_id": "user-demo",
+  "source_intent_refs": ["intent-demo-1"],
+  "title": "proposal de configuración del slice",
+  "summary": "crear un draft gobernado para probar el corredor del framework",
+  "artifacts_in_scope": ["artifact://demo/config"],
+  "proposed_changes": ["set demo mode"],
+  "constraints": ["no apply real"],
+  "assumptions": ["baseline slice running locally"],
+  "open_questions": [],
+  "human_diff_ref": "human-diff-demo-1",
+  "material_diff_ref": "material-diff-demo-1"
+}

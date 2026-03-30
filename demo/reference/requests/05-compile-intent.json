@@ -1,0 +1,13 @@
+{
+  "request_id": "req-demo-1",
+  "tenant_id": "tenant-demo",
+  "workspace_id": "workspace-demo",
+  "user_id": "user-demo",
+  "session_id": "session-demo",
+  "objetivo": "compilar una intención gobernada de referencia",
+  "alcance": "reference-demo-scope",
+  "tipo_de_resultado_esperado": "execution",
+  "autonomia_solicitada": "assisted",
+  "criterios_de_exito": ["evidence trail completo"],
+  "restricciones": ["no apply real"]
+}

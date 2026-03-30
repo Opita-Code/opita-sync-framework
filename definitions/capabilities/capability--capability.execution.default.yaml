@@ -1,0 +1,29 @@
+{
+  "api_version": "osf/v1",
+  "kind": "capability_manifest",
+  "metadata": {
+    "id": "capability.execution.default",
+    "version": "1.0.0"
+  },
+  "spec": {
+    "supported_result_types": ["execution"],
+    "supported_contract_versions": ["1.0"],
+    "packaging": {
+      "bundle_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "provider_compatibility": {
+      "supported_runtime_versions": ["provider-runtime-v1"]
+    },
+    "bindings": [
+      {
+        "binding_id": "binding-capability-execution-default-dev",
+        "environment": "dev",
+        "supported_result_types": ["execution"],
+        "supported_contract_versions": ["1.0"],
+        "provider_ref": "provider://capability.execution.default/default",
+        "provider_runtime_version": "provider-runtime-v1",
+        "status": "active"
+      }
+    ]
+  }
+}

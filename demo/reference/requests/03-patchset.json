@@ -1,0 +1,9 @@
+{
+  "proposal_draft_id": "proposal-demo-1",
+  "target_artifacts": ["artifact://demo/config"],
+  "material_operations": ["update demo config"],
+  "material_diff_hash": "patchset-hash-demo-1",
+  "policy_preview_inputs_ref": "policy-preview-demo-1",
+  "approval_preview_inputs_ref": "approval-preview-demo-1",
+  "classification_preview_inputs_ref": "classification-preview-demo-1"
+}
