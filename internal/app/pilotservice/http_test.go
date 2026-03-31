@@ -128,3 +128,46 @@ func TestPilotIncidentCandidatesDeriveFromCanonicalEvents(t *testing.T) {
 		t.Fatalf("expected 3 incident candidates, got %d", len(candidates))
 	}
 }
+
+func TestPilotScorecardCapturesAccessDomainMetrics(t *testing.T) {
+	eventLog := memory.NewEventLog()
+	base := time.Date(2026, 3, 30, 13, 0, 0, 0, time.UTC)
+	records := []events.Record{
+		{EventID: "1", EventType: "tenant_access.grant_created", TenantID: "tenant-gamma-access", TraceID: "trace-gamma-access-01", OccurredAt: base, Payload: map[string]any{"state": "active"}},
+		{EventID: "2", EventType: "tenant_access.grant_created", TenantID: "tenant-gamma-access", TraceID: "trace-gamma-access-02", ApprovalRequestID: "approval-1", OccurredAt: base.Add(10 * time.Second), Payload: map[string]any{"state": "blocked"}},
+		{EventID: "3", EventType: "tenant_access.grant_awaiting_approval", TenantID: "tenant-gamma-access", TraceID: "trace-gamma-access-02", ApprovalRequestID: "approval-1", OccurredAt: base.Add(15 * time.Second)},
+		{EventID: "4", EventType: "tenant_access.grant_released", TenantID: "tenant-gamma-access", TraceID: "trace-gamma-access-02", ApprovalRequestID: "approval-1", OccurredAt: base.Add(20 * time.Second)},
+		{EventID: "5", EventType: "tenant_access.grant_revoked", TenantID: "tenant-gamma-access", TraceID: "trace-gamma-access-02", OccurredAt: base.Add(30 * time.Second)},
+		{EventID: "6", EventType: "tenant_access.delegation_created", TenantID: "tenant-gamma-access", TraceID: "trace-gamma-access-03", ApprovalRequestID: "approval-2", OccurredAt: base.Add(40 * time.Second), Payload: map[string]any{"state": "blocked"}},
+		{EventID: "7", EventType: "tenant_access.delegation_awaiting_approval", TenantID: "tenant-gamma-access", TraceID: "trace-gamma-access-03", ApprovalRequestID: "approval-2", OccurredAt: base.Add(45 * time.Second)},
+		{EventID: "8", EventType: "tenant_access.delegation_released", TenantID: "tenant-gamma-access", TraceID: "trace-gamma-access-03", ApprovalRequestID: "approval-2", OccurredAt: base.Add(50 * time.Second)},
+		{EventID: "9", EventType: "tenant_access.delegation_revoked", TenantID: "tenant-gamma-access", TraceID: "trace-gamma-access-03", OccurredAt: base.Add(60 * time.Second)},
+	}
+	for _, record := range records {
+		if err := eventLog.Append(record); err != nil {
+			t.Fatalf("append event: %v", err)
+		}
+	}
+	h := pilotservice.NewHandler(eventLog)
+	req := httptest.NewRequest(http.MethodGet, "/v1/pilot/scorecard?tenant_id=tenant-gamma-access", nil)
+	w := httptest.NewRecorder()
+	h.Routes().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	accessMetrics := resp["access"].(map[string]any)
+	if accessMetrics["grants_created"].(float64) != 2 || accessMetrics["grants_revoked"].(float64) != 1 {
+		t.Fatalf("unexpected grant metrics: %#v", accessMetrics)
+	}
+	if accessMetrics["delegations_created"].(float64) != 1 || accessMetrics["delegations_revoked"].(float64) != 1 {
+		t.Fatalf("unexpected delegation metrics: %#v", accessMetrics)
+	}
+	operability := resp["operability"].(map[string]any)
+	if operability["end_to_end_reconstructable"].(float64) < 1 {
+		t.Fatalf("expected reconstructable access scenarios, got %#v", operability)
+	}
+}

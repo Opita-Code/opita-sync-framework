@@ -78,6 +78,7 @@ La suite completa pasa con:
   - scorecard por escenario derivada de `trace_id`
   - `GET /v1/pilot/incident-candidates?tenant_id=...&scenario_id=...`
   - incident candidates derivados de warnings, blocked recoveries y fingerprint mismatches
+  - scorecard access-aware: grants/delegations también suman métricas y reconstructability aunque no haya `execution_id`
 
 ## Bugfixes importantes recientes
 

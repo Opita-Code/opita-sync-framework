@@ -41,6 +41,19 @@ type operabilityMetrics struct {
 	ExecutionsObserved         int `json:"executions_observed"`
 }
 
+type accessMetrics struct {
+	GrantsCreated            int `json:"grants_created"`
+	GrantsBlockedForApproval int `json:"grants_blocked_for_approval"`
+	GrantsReleased           int `json:"grants_released"`
+	GrantsRevoked            int `json:"grants_revoked"`
+	DelegationsCreated       int `json:"delegations_created"`
+	DelegationsBlocked       int `json:"delegations_blocked"`
+	DelegationsReleased      int `json:"delegations_released"`
+	DelegationsRevoked       int `json:"delegations_revoked"`
+	AccessScenariosObserved  int `json:"access_scenarios_observed"`
+	AccessScenariosComplete  int `json:"access_scenarios_complete"`
+}
+
 type pilotScorecard struct {
 	TenantID          string             `json:"tenant_id,omitempty"`
 	ScenarioID        string             `json:"scenario_id,omitempty"`
@@ -48,6 +61,7 @@ type pilotScorecard struct {
 	Timing            timingMetrics      `json:"timing"`
 	Governance        governanceMetrics  `json:"governance"`
 	Operability       operabilityMetrics `json:"operability"`
+	Access            accessMetrics      `json:"access"`
 	EventCount        int                `json:"event_count"`
 	TrackedExecutions []string           `json:"tracked_executions"`
 	Boundary          string             `json:"boundary"`
@@ -166,11 +180,14 @@ func (h *Handler) handleIncidentCandidates(w http.ResponseWriter, r *http.Reques
 
 func buildScorecard(records []events.Record, tenantID string) pilotScorecard {
 	byExecution := map[string][]events.Record{}
+	byTraceNoExecution := map[string][]events.Record{}
 	tracked := map[string]struct{}{}
 	for _, record := range records {
 		if record.ExecutionID != "" {
 			byExecution[record.ExecutionID] = append(byExecution[record.ExecutionID], record)
 			tracked[record.ExecutionID] = struct{}{}
+		} else if strings.TrimSpace(record.TraceID) != "" {
+			byTraceNoExecution[record.TraceID] = append(byTraceNoExecution[record.TraceID], record)
 		}
 	}
 	scorecard := pilotScorecard{
@@ -182,6 +199,38 @@ func buildScorecard(records []events.Record, tenantID string) pilotScorecard {
 	}
 	sort.Strings(scorecard.TrackedExecutions)
 	timing := timingAccumulator{}
+	for _, record := range records {
+		switch record.EventType {
+		case "tenant_access.grant_created":
+			scorecard.Access.GrantsCreated++
+			if payloadState(record) == string(accessBlockedState()) {
+				scorecard.Access.GrantsBlockedForApproval++
+			}
+		case "tenant_access.grant_awaiting_approval":
+			scorecard.Access.GrantsBlockedForApproval++
+			scorecard.Governance.ApprovalsRequired++
+			scorecard.Governance.GovernanceBlocks++
+		case "tenant_access.grant_released":
+			scorecard.Access.GrantsReleased++
+			scorecard.Governance.SuccessfulReleases++
+		case "tenant_access.grant_revoked":
+			scorecard.Access.GrantsRevoked++
+		case "tenant_access.delegation_created":
+			scorecard.Access.DelegationsCreated++
+			if payloadState(record) == string(accessBlockedState()) {
+				scorecard.Access.DelegationsBlocked++
+			}
+		case "tenant_access.delegation_awaiting_approval":
+			scorecard.Access.DelegationsBlocked++
+			scorecard.Governance.ApprovalsRequired++
+			scorecard.Governance.GovernanceBlocks++
+		case "tenant_access.delegation_released":
+			scorecard.Access.DelegationsReleased++
+			scorecard.Governance.SuccessfulReleases++
+		case "tenant_access.delegation_revoked":
+			scorecard.Access.DelegationsRevoked++
+		}
+	}
 	for executionID, executionRecords := range byExecution {
 		_ = executionID
 		timing.consume(executionRecords)
@@ -208,6 +257,14 @@ func buildScorecard(records []events.Record, tenantID string) pilotScorecard {
 			if record.EventType == "approval.awaiting" || (record.EventType == "execution.created" && payloadState(record) == "blocked") {
 				scorecard.Governance.GovernanceBlocks++
 			}
+		}
+	}
+	for _, traceRecords := range byTraceNoExecution {
+		scorecard.Access.AccessScenariosObserved++
+		if hasAccessEvidenceTrail(traceRecords) {
+			scorecard.Access.AccessScenariosComplete++
+			scorecard.Operability.CasesWithFullEvidenceTrail++
+			scorecard.Operability.EndToEndReconstructable++
 		}
 	}
 	scorecard.Timing = timing.average()
@@ -302,12 +359,35 @@ func hasFullEvidenceTrail(records []events.Record) bool {
 	return true
 }
 
+func hasAccessEvidenceTrail(records []events.Record) bool {
+	hasCreate := false
+	hasState := false
+	for _, record := range records {
+		switch record.EventType {
+		case "tenant_access.grant_created", "tenant_access.delegation_created":
+			hasCreate = true
+			if payloadState(record) == string(accessActiveState()) || payloadState(record) == string(accessBlockedState()) {
+				hasState = true
+			}
+		case "tenant_access.grant_awaiting_approval", "tenant_access.delegation_awaiting_approval", "tenant_access.grant_released", "tenant_access.delegation_released", "tenant_access.grant_revoked", "tenant_access.delegation_revoked":
+			hasState = true
+		}
+	}
+	return hasCreate && hasState
+}
+
 func payloadState(record events.Record) string {
 	if state, ok := record.Payload["runtime_state"].(string); ok {
 		return state
 	}
+	if state, ok := record.Payload["state"].(string); ok {
+		return state
+	}
 	return ""
 }
+
+func accessBlockedState() string { return "blocked" }
+func accessActiveState() string  { return "active" }
 
 func mapKeys(values map[string]struct{}) []string {
 	out := make([]string, 0, len(values))
