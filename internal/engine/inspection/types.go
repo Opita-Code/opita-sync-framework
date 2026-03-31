@@ -67,5 +67,6 @@ type RecoveryActionCandidate struct {
 type RecoveryStore interface {
 	Create(candidate RecoveryActionCandidate) error
 	GetByID(recoveryActionCandidateID string) (RecoveryActionCandidate, bool, error)
+	ListByExecution(executionID string) ([]RecoveryActionCandidate, error)
 	Update(candidate RecoveryActionCandidate) error
 }

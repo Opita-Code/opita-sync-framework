@@ -46,6 +46,30 @@ func (s *RecoveryStore) GetByID(id string) (inspection.RecoveryActionCandidate, 
 	return candidate, true, nil
 }
 
+func (s *RecoveryStore) ListByExecution(executionID string) ([]inspection.RecoveryActionCandidate, error) {
+	rows, err := s.store.DB.QueryContext(contextBackground(), `select payload from recovery_action_candidates where execution_id = $1 order by created_at asc`, executionID)
+	if err != nil {
+		return nil, fmt.Errorf("list recovery candidates by execution: %w", err)
+	}
+	defer rows.Close()
+	out := make([]inspection.RecoveryActionCandidate, 0)
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan recovery candidate: %w", err)
+		}
+		var candidate inspection.RecoveryActionCandidate
+		if err := json.Unmarshal(raw, &candidate); err != nil {
+			return nil, fmt.Errorf("unmarshal recovery candidate: %w", err)
+		}
+		out = append(out, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate recovery candidates: %w", err)
+	}
+	return out, nil
+}
+
 func (s *RecoveryStore) Update(candidate inspection.RecoveryActionCandidate) error {
 	raw, err := json.Marshal(candidate)
 	if err != nil {

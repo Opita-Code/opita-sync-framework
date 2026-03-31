@@ -20,7 +20,7 @@
         "environment": "dev",
         "supported_result_types": ["plan"],
         "supported_contract_versions": ["1.0"],
-        "provider_ref": "provider://capability.plan.default/default",
+        "provider_ref": "provider://tenant.configuration/plan",
         "provider_runtime_version": "provider-runtime-v1",
         "status": "active"
       }

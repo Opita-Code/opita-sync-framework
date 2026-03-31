@@ -28,6 +28,9 @@ func TestRegistryResolverResolveSuccess(t *testing.T) {
 	if result.BindingID == "" || result.ProviderRef == "" {
 		t.Fatalf("expected binding and provider refs")
 	}
+	if result.ProviderRef != "provider://tenant.configuration/plan" {
+		t.Fatalf("expected tenant configuration plan provider, got %s", result.ProviderRef)
+	}
 }
 
 func TestRegistryResolverRejectsIncompatibleContractVersion(t *testing.T) {

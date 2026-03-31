@@ -59,14 +59,27 @@ La suite completa pasa con:
 - `M4.2`
   - `GET /v1/readable-previews/{preview_id}`
 
+- `M4.3`
+  - `GET /v1/operator/executions/{execution_id}/workspace`
+  - lifecycle/outcome/evidence/recovery surface usable para operator
+
+- `M5.2`
+  - `TenantConfigurationProvider`
+  - manifests default alineados a `provider://tenant.configuration/*`
+  - idempotency key obligatoria para execute
+  - evidence refs mínimas del connector
+
+## Bugfixes importantes recientes
+
+- fix de colisión de IDs en orchestrator usando contador atómico adicional sobre `UnixNano()` para `execution_id`, `approval_request_id` y `event_id`
+
 ## Próximo paso recomendado
 
 Seguir con:
 
-1. `M4.3` inspection/recovery usable
-2. `M5.1` modelado de primera vertical
-3. `M5.2` conectores del dominio
-4. `M5.3` piloto
+1. sincronizar y publicar estos cambios del framework si todavía no están en remoto
+2. preparar ejecución real del piloto contra tenants definidos en el repo producto
+3. evaluar si corresponde abrir resolución dinámica por dominio en lugar de usar bindings default
 
 ## Archivos clave para retomar
 

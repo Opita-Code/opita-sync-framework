@@ -148,6 +148,7 @@ func serve(orchestrator *foundation.FoundationOrchestrator, handler *intentservi
 	mux.Handle("/v1/simulations", previewHandler.Routes())
 	mux.Handle("/v1/readable-previews/", previewHandler.Routes())
 	mux.Handle("/v1/inspection/", operatorHandler.Routes())
+	mux.Handle("/v1/operator/", operatorHandler.Routes())
 	mux.Handle("/v1/recovery-actions", operatorHandler.Routes())
 	mux.Handle("/v1/recovery-actions/", operatorHandler.Routes())
 	mux.Handle("/v1/debug/", devHandler.Routes())

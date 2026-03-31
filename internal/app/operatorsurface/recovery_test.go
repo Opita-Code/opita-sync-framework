@@ -10,6 +10,7 @@ import (
 
 	"opita-sync-framework/internal/app/operatorsurface"
 	"opita-sync-framework/internal/engine/approvals"
+	"opita-sync-framework/internal/engine/events"
 	"opita-sync-framework/internal/engine/foundation"
 	"opita-sync-framework/internal/engine/inspection"
 	"opita-sync-framework/internal/engine/intent"
@@ -202,5 +203,32 @@ func TestExecuteManualCompensationFromFailedTransitionsToCompensationPending(t *
 	}
 	if exec.State != runtime.ExecutionStateCompensationPending {
 		t.Fatalf("expected compensation_pending, got %s", exec.State)
+	}
+}
+
+func TestOperatorWorkspaceShowsBlockedStateClearly(t *testing.T) {
+	runtimeStore := memory.NewRuntimeService()
+	eventLog := memory.NewEventLog()
+	runStore := memory.NewFoundationRunStore()
+	approvalStore := memory.NewApprovalStore()
+	recoveryStore := memory.NewRecoveryStore()
+	exec := runtime.ExecutionRecord{ExecutionID: "exec-7", TenantID: "tenant-1", ContractID: "contract-7", ContractFingerprint: "fp-7", TraceID: "trace-7", State: runtime.ExecutionStateBlocked, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	_ = runtimeStore.CreateExecution(exec)
+	_ = runStore.Save(foundation.FoundationRunResult{Contract: intent.CompiledContract{ContractID: "contract-7", Fingerprint: "fp-7", TenantID: "tenant-1"}, Execution: exec, PolicyDecision: policy.DecisionRecord{PolicyDecisionID: "policy-7", Decision: policy.DecisionDenyBlock}, Resolution: registry.ResolutionResult{CapabilityManifestRef: "manifest://capability.execution.default", BindingID: "binding-7", ProviderRef: "provider://z"}})
+	_ = eventLog.Append(events.Record{EventID: "event-7", EventType: "policy.decision_recorded", ExecutionID: "exec-7", TenantID: "tenant-1", TraceID: "trace-7", OccurredAt: time.Now().UTC()})
+	h := operatorsurface.NewHandler(runtimeStore, eventLog, runStore, approvalStore, recoveryStore)
+	req := httptest.NewRequest(http.MethodGet, "/v1/operator/executions/exec-7/workspace", nil)
+	w := httptest.NewRecorder()
+	h.Routes().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	lifecycle := resp["lifecycle"].(map[string]any)
+	if lifecycle["lifecycle_label"] != "blocked" {
+		t.Fatalf("expected blocked lifecycle, got %#v", lifecycle["lifecycle_label"])
 	}
 }

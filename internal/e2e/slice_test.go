@@ -81,6 +81,7 @@ func TestFullSliceCorridor(t *testing.T) {
 	mux.Handle("/v1/simulations", previewHandler.Routes())
 	mux.Handle("/v1/readable-previews/", previewHandler.Routes())
 	mux.Handle("/v1/inspection/", operatorHandler.Routes())
+	mux.Handle("/v1/operator/", operatorHandler.Routes())
 	mux.Handle("/v1/recovery-actions", operatorHandler.Routes())
 	mux.Handle("/v1/recovery-actions/", operatorHandler.Routes())
 	mux.Handle("/v1/debug/", devHandler.Routes())
@@ -208,6 +209,10 @@ func TestFullSliceCorridor(t *testing.T) {
 	inspectionResp := getJSON(t, server.URL+"/v1/inspection/executions/"+executionID)
 	if len(inspectionResp["conversation_turn_refs"].([]any)) == 0 || len(inspectionResp["proposal_draft_refs"].([]any)) == 0 || len(inspectionResp["preview_candidate_refs"].([]any)) == 0 {
 		t.Fatalf("expected correlated refs in inspection view, got %#v", inspectionResp)
+	}
+	operatorWorkspace := getJSON(t, server.URL+"/v1/operator/executions/"+executionID+"/workspace")
+	if operatorWorkspace["boundary"] != "operator_surface_reads_and_requests_kernel_executes" {
+		t.Fatalf("expected operator workspace boundary, got %#v", operatorWorkspace["boundary"])
 	}
 	getJSON(t, server.URL+"/v1/debug/semantic?execution_id="+executionID)
 

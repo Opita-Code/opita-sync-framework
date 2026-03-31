@@ -20,7 +20,7 @@
         "environment": "dev",
         "supported_result_types": ["execution"],
         "supported_contract_versions": ["1.0"],
-        "provider_ref": "provider://capability.execution.default/default",
+        "provider_ref": "provider://tenant.configuration/execution",
         "provider_runtime_version": "provider-runtime-v1",
         "status": "active"
       }

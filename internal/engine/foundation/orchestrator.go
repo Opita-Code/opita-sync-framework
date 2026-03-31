@@ -3,6 +3,7 @@ package foundation
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"opita-sync-framework/internal/engine/approvals"
@@ -22,6 +23,8 @@ type FoundationOrchestrator struct {
 	Runs      RunRepository
 	Approvals approvals.Service
 }
+
+var uniqueIDCounter atomic.Uint64
 
 type intentCompiler interface {
 	Compile(ctx context.Context, input intent.IntentInput) (intent.CompiledContract, intent.CompilationReport, error)
@@ -52,7 +55,7 @@ func (o *FoundationOrchestrator) Run(ctx context.Context, input intent.IntentInp
 		return FoundationRunResult{}, fmt.Errorf("resolve capability: %w", err)
 	}
 
-	executionID := fmt.Sprintf("exec-%d", time.Now().UTC().UnixNano())
+	executionID := uniqueID("exec")
 	traceID := contract.TraceID
 	if traceID == "" {
 		traceID = fmt.Sprintf("trace-%s", executionID)
@@ -78,7 +81,7 @@ func (o *FoundationOrchestrator) Run(ctx context.Context, input intent.IntentInp
 	case policy.DecisionRequireApproval:
 		state = runtime.ExecutionStateAwaitingApproval
 		record := approvals.Request{
-			ApprovalRequestID:         fmt.Sprintf("approval-%d", time.Now().UTC().UnixNano()),
+			ApprovalRequestID:         uniqueID("approval"),
 			ExecutionID:               executionID,
 			ContractID:                contract.ContractID,
 			TenantID:                  contract.TenantID,
@@ -115,7 +118,7 @@ func (o *FoundationOrchestrator) Run(ctx context.Context, input intent.IntentInp
 
 	eventsToAppend := []events.Record{
 		{
-			EventID:             fmt.Sprintf("event-%d", time.Now().UTC().UnixNano()),
+			EventID:             uniqueID("event"),
 			EventType:           "contract.compilation_completed",
 			TenantID:            contract.TenantID,
 			TraceID:             traceID,
@@ -133,7 +136,7 @@ func (o *FoundationOrchestrator) Run(ctx context.Context, input intent.IntentInp
 			Payload:             map[string]any{"status": report.Status, "simulation_result_ids": contract.SimulationResultIDs},
 		},
 		{
-			EventID:             fmt.Sprintf("event-%d", time.Now().UTC().UnixNano()+1),
+			EventID:             uniqueID("event"),
 			EventType:           "policy.decision_recorded",
 			TenantID:            contract.TenantID,
 			TraceID:             traceID,
@@ -151,7 +154,7 @@ func (o *FoundationOrchestrator) Run(ctx context.Context, input intent.IntentInp
 			Payload:             map[string]any{"decision": decision.Decision, "reason_codes": decision.ReasonCodes, "simulation_result_ids": contract.SimulationResultIDs},
 		},
 		{
-			EventID:             fmt.Sprintf("event-%d", time.Now().UTC().UnixNano()+2),
+			EventID:             uniqueID("event"),
 			EventType:           "execution.created",
 			TenantID:            contract.TenantID,
 			TraceID:             traceID,
@@ -178,7 +181,7 @@ func (o *FoundationOrchestrator) Run(ctx context.Context, input intent.IntentInp
 
 	if approvalRecord != nil {
 		eventsToAppend = append(eventsToAppend, events.Record{
-			EventID:             fmt.Sprintf("event-%d", time.Now().UTC().UnixNano()+3),
+			EventID:             uniqueID("event"),
 			EventType:           "approval.awaiting",
 			TenantID:            contract.TenantID,
 			TraceID:             traceID,
@@ -250,4 +253,8 @@ func deriveRiskLevel(resultType intent.ResultType) string {
 	default:
 		return "low"
 	}
+}
+
+func uniqueID(prefix string) string {
+	return fmt.Sprintf("%s-%d-%d", prefix, time.Now().UTC().UnixNano(), uniqueIDCounter.Add(1))
 }

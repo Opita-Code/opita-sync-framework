@@ -33,6 +33,18 @@ func (s *RecoveryStore) GetByID(id string) (inspection.RecoveryActionCandidate, 
 	return candidate, found, nil
 }
 
+func (s *RecoveryStore) ListByExecution(executionID string) ([]inspection.RecoveryActionCandidate, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]inspection.RecoveryActionCandidate, 0)
+	for _, candidate := range s.candidates {
+		if candidate.ExecutionID == executionID {
+			out = append(out, candidate)
+		}
+	}
+	return out, nil
+}
+
 func (s *RecoveryStore) Update(candidate inspection.RecoveryActionCandidate) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
