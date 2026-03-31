@@ -37,6 +37,54 @@ type Handler struct {
 	Approvals ApprovalService
 }
 
+type accessAdminWorkspace struct {
+	TenantID    string               `json:"tenant_id"`
+	Summary     accessSummaryCard    `json:"summary"`
+	Grants      accessGrantCard      `json:"grants"`
+	Delegations accessDelegationCard `json:"delegations"`
+	Governance  accessGovernanceCard `json:"governance"`
+	Impact      accessImpactCard     `json:"impact"`
+	Boundary    string               `json:"boundary"`
+}
+
+type accessSummaryCard struct {
+	TotalGrants      int      `json:"total_grants"`
+	TotalDelegations int      `json:"total_delegations"`
+	BlockedItems     int      `json:"blocked_items"`
+	RevokedItems     int      `json:"revoked_items"`
+	RecommendedNext  []string `json:"recommended_next_actions"`
+	Summary          string   `json:"summary"`
+}
+
+type accessGrantCard struct {
+	ActiveGrants          int      `json:"active_grants"`
+	BlockedGrants         int      `json:"blocked_grants"`
+	ApprovalRequired      int      `json:"approval_required_grants"`
+	SensitiveCapabilities []string `json:"sensitive_capabilities"`
+	Summary               string   `json:"summary"`
+}
+
+type accessDelegationCard struct {
+	ActiveDelegations      int      `json:"active_delegations"`
+	BlockedDelegations     int      `json:"blocked_delegations"`
+	RedelegableDelegations int      `json:"redelegable_delegations"`
+	SensitiveDelegations   []string `json:"sensitive_delegations"`
+	Summary                string   `json:"summary"`
+}
+
+type accessGovernanceCard struct {
+	ApprovalRequestCount int      `json:"approval_request_count"`
+	RevocationCount      int      `json:"revocation_count"`
+	Guardrails           []string `json:"guardrails"`
+	Summary              string   `json:"summary"`
+}
+
+type accessImpactCard struct {
+	ApprovalSensitiveAreas   []string `json:"approval_sensitive_areas"`
+	RevocationSensitiveAreas []string `json:"revocation_sensitive_areas"`
+	PromotionAdvice          string   `json:"promotion_advice"`
+}
+
 type createGrantRequest struct {
 	TenantID       string   `json:"tenant_id"`
 	PrincipalRef   string   `json:"principal_ref"`
@@ -87,6 +135,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/tenant-access/delegations", h.handleCreateDelegation)
 	mux.HandleFunc("GET /v1/tenant-access/delegations/", h.handleListDelegations)
 	mux.HandleFunc("POST /v1/tenant-access/delegations/", h.handleDelegationAction)
+	mux.HandleFunc("GET /v1/tenant-access/workspace/", h.handleWorkspace)
 	return mux
 }
 
@@ -192,6 +241,26 @@ func (h *Handler) handleListDelegations(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tenant_id": tenantID, "delegations": delegations})
+}
+
+func (h *Handler) handleWorkspace(w http.ResponseWriter, r *http.Request) {
+	tenantID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/tenant-access/workspace/"), "/")
+	if tenantID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "workspace.missing_tenant_id"})
+		return
+	}
+	grants, err := h.Store.ListGrantsByTenant(tenantID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "workspace.grants_failed", "message": err.Error()})
+		return
+	}
+	delegations, err := h.Store.ListDelegationsByTenant(tenantID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "workspace.delegations_failed", "message": err.Error()})
+		return
+	}
+	workspace := buildAccessAdminWorkspace(tenantID, grants, delegations)
+	writeJSON(w, http.StatusOK, workspace)
 }
 
 func (h *Handler) handleGrantAction(w http.ResponseWriter, r *http.Request) {
@@ -350,6 +419,121 @@ func splitActionPath(path string) (string, string) {
 		return "", ""
 	}
 	return parts[0], parts[1]
+}
+
+func buildAccessAdminWorkspace(tenantID string, grants []access.CapabilityGrant, delegations []access.DelegationGrant) accessAdminWorkspace {
+	blockedItems := 0
+	revokedItems := 0
+	activeGrants := 0
+	blockedGrants := 0
+	approvalRequiredGrants := 0
+	sensitiveCapabilities := make([]string, 0)
+	activeDelegations := 0
+	blockedDelegations := 0
+	redelegableDelegations := 0
+	sensitiveDelegations := make([]string, 0)
+	approvalRequests := 0
+	revocations := 0
+	for _, grant := range grants {
+		switch grant.State {
+		case access.StateActive:
+			activeGrants++
+		case access.StateBlocked:
+			blockedGrants++
+			blockedItems++
+		case access.StateRevoked:
+			revokedItems++
+			revocations++
+		}
+		if grant.RequiresApproval {
+			approvalRequiredGrants++
+		}
+		if grant.ApprovalRequestID != "" {
+			approvalRequests++
+		}
+		if strings.Contains(grant.CapabilityID, "approval") || strings.Contains(grant.CapabilityID, "recovery") || strings.Contains(grant.CapabilityID, "restricted") {
+			sensitiveCapabilities = append(sensitiveCapabilities, grant.CapabilityID)
+		}
+	}
+	for _, grant := range delegations {
+		switch grant.State {
+		case access.StateActive:
+			activeDelegations++
+		case access.StateBlocked:
+			blockedDelegations++
+			blockedItems++
+		case access.StateRevoked:
+			revokedItems++
+			revocations++
+		}
+		if grant.ApprovalRequestID != "" {
+			approvalRequests++
+		}
+		if grant.CanRedelegate {
+			redelegableDelegations++
+		}
+		if grant.RequiresApproval || grant.MaxDepth > 1 || grant.CanRedelegate {
+			sensitiveDelegations = append(sensitiveDelegations, grant.GrantID)
+		}
+	}
+	recommendedNext := []string{"review blocked items", "review approval-sensitive grants", "review delegation depth and redelegation"}
+	promotionAdvice := "ready_for_governed_access_changes"
+	if blockedItems > 0 {
+		promotionAdvice = "resolve_blocked_grants_or_delegations_before_promoting_sensitive_changes"
+	}
+	return accessAdminWorkspace{
+		TenantID: tenantID,
+		Summary: accessSummaryCard{
+			TotalGrants:      len(grants),
+			TotalDelegations: len(delegations),
+			BlockedItems:     blockedItems,
+			RevokedItems:     revokedItems,
+			RecommendedNext:  recommendedNext,
+			Summary:          fmt.Sprintf("tenant %s has %d grants and %d delegations", tenantID, len(grants), len(delegations)),
+		},
+		Grants: accessGrantCard{
+			ActiveGrants:          activeGrants,
+			BlockedGrants:         blockedGrants,
+			ApprovalRequired:      approvalRequiredGrants,
+			SensitiveCapabilities: uniqueStrings(sensitiveCapabilities),
+			Summary:               fmt.Sprintf("%d grants active, %d blocked", activeGrants, blockedGrants),
+		},
+		Delegations: accessDelegationCard{
+			ActiveDelegations:      activeDelegations,
+			BlockedDelegations:     blockedDelegations,
+			RedelegableDelegations: redelegableDelegations,
+			SensitiveDelegations:   uniqueStrings(sensitiveDelegations),
+			Summary:                fmt.Sprintf("%d delegations active, %d blocked", activeDelegations, blockedDelegations),
+		},
+		Governance: accessGovernanceCard{
+			ApprovalRequestCount: approvalRequests,
+			RevocationCount:      revocations,
+			Guardrails:           []string{"approval-sensitive access stays governed", "revocation remains explicit and auditable", "delegation does not bypass tenant policies"},
+			Summary:              "access governance remains constrained by approvals, revoke paths and delegation limits",
+		},
+		Impact: accessImpactCard{
+			ApprovalSensitiveAreas:   []string{"restricted capabilities", "redelegable delegations", "high-sensitivity access changes"},
+			RevocationSensitiveAreas: []string{"active grants", "active delegations", "delegated approval paths"},
+			PromotionAdvice:          promotionAdvice,
+		},
+		Boundary: "access_admin_surface_reads_grants_and_guides_governed_authority_changes",
+	}
+}
+
+func uniqueStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func cleanStrings(values []string) []string {

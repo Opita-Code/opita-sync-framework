@@ -116,3 +116,41 @@ func TestDelegationApprovalAndRevocationFlow(t *testing.T) {
 		t.Fatalf("expected 200, got %d body=%s", revokeW.Code, revokeW.Body.String())
 	}
 }
+
+func TestAccessWorkspaceReturnsUsableSummary(t *testing.T) {
+	store := memory.NewAccessStore()
+	events := memory.NewEventLog()
+	approvals := memory.NewApprovalStore()
+	h := accessservice.NewHandler(store, events, approvals)
+	grantBody, _ := json.Marshal(map[string]any{"tenant_id": "tenant-1", "principal_ref": "user://alice", "principal_type": "person", "capability_id": "tenant.approval.release_blocked_execution", "allowed_actions": []string{"approve"}, "trace_ref": "trace-grant-workspace"})
+	grantReq := httptest.NewRequest(http.MethodPost, "/v1/tenant-access/grants", bytes.NewReader(grantBody))
+	grantW := httptest.NewRecorder()
+	h.Routes().ServeHTTP(grantW, grantReq)
+	if grantW.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", grantW.Code, grantW.Body.String())
+	}
+	delBody, _ := json.Marshal(map[string]any{"tenant_id": "tenant-1", "source_principal": "role://tenant-admin", "target_principal": "user://bob", "authority_source": "tenant-admin", "scope_type": "capability", "scope_ref": "tenant.recovery.request_manual_compensation", "allowed_actions": []string{"use"}, "can_redelegate": true, "max_depth": 2, "trace_ref": "trace-delegation-workspace"})
+	delReq := httptest.NewRequest(http.MethodPost, "/v1/tenant-access/delegations", bytes.NewReader(delBody))
+	delW := httptest.NewRecorder()
+	h.Routes().ServeHTTP(delW, delReq)
+	if delW.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", delW.Code, delW.Body.String())
+	}
+	wsReq := httptest.NewRequest(http.MethodGet, "/v1/tenant-access/workspace/tenant-1", nil)
+	wsW := httptest.NewRecorder()
+	h.Routes().ServeHTTP(wsW, wsReq)
+	if wsW.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", wsW.Code, wsW.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(wsW.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal workspace: %v", err)
+	}
+	if resp["boundary"] != "access_admin_surface_reads_grants_and_guides_governed_authority_changes" {
+		t.Fatalf("unexpected boundary: %#v", resp["boundary"])
+	}
+	grants := resp["grants"].(map[string]any)
+	if grants["blocked_grants"].(float64) < 1 {
+		t.Fatalf("expected blocked grant summary, got %#v", grants)
+	}
+}
