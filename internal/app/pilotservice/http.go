@@ -43,6 +43,7 @@ type operabilityMetrics struct {
 
 type pilotScorecard struct {
 	TenantID          string             `json:"tenant_id,omitempty"`
+	ScenarioID        string             `json:"scenario_id,omitempty"`
 	GeneratedAt       time.Time          `json:"generated_at"`
 	Timing            timingMetrics      `json:"timing"`
 	Governance        governanceMetrics  `json:"governance"`
@@ -59,6 +60,7 @@ func NewHandler(events EventReader) *Handler {
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/pilot/scorecard", h.handleScorecard)
+	mux.HandleFunc("GET /v1/pilot/scorecard/scenarios", h.handleScenarioScorecards)
 	return mux
 }
 
@@ -80,6 +82,44 @@ func (h *Handler) handleScorecard(w http.ResponseWriter, r *http.Request) {
 	}
 	scorecard := buildScorecard(records, tenantID)
 	writeJSON(w, http.StatusOK, scorecard)
+}
+
+func (h *Handler) handleScenarioScorecards(w http.ResponseWriter, r *http.Request) {
+	if h.Events == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "pilot.events_not_ready"})
+		return
+	}
+	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+	records := h.Events.Records()
+	if tenantID != "" {
+		filtered := make([]events.Record, 0, len(records))
+		for _, record := range records {
+			if record.TenantID == tenantID {
+				filtered = append(filtered, record)
+			}
+		}
+		records = filtered
+	}
+	byTrace := map[string][]events.Record{}
+	for _, record := range records {
+		traceID := strings.TrimSpace(record.TraceID)
+		if traceID == "" {
+			continue
+		}
+		byTrace[traceID] = append(byTrace[traceID], record)
+	}
+	out := make([]pilotScorecard, 0, len(byTrace))
+	for traceID, grouped := range byTrace {
+		scorecard := buildScorecard(grouped, tenantID)
+		scorecard.ScenarioID = traceID
+		out = append(out, scorecard)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ScenarioID < out[j].ScenarioID })
+	writeJSON(w, http.StatusOK, map[string]any{
+		"tenant_id": tenantID,
+		"scenarios": out,
+		"boundary":  "scenario_scorecards_derived_from_trace_id",
+	})
 }
 
 func buildScorecard(records []events.Record, tenantID string) pilotScorecard {

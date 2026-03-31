@@ -74,6 +74,8 @@ La suite completa pasa con:
   - `GET /v1/pilot/scorecard?tenant_id=...`
   - métricas derivadas del event log canónico
   - cuenta approvals, releases, blocks, mismatches, recoveries y reconstructability
+  - `GET /v1/pilot/scorecard/scenarios?tenant_id=...`
+  - scorecard por escenario derivada de `trace_id`
 
 ## Bugfixes importantes recientes
 
