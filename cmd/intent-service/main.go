@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"opita-sync-framework/internal/app/accessservice"
 	"opita-sync-framework/internal/app/artifactservice"
 	"opita-sync-framework/internal/app/devsurface"
 	"opita-sync-framework/internal/app/intentservice"
@@ -41,6 +42,7 @@ func main() {
 	eventLog := memory.NewEventLog()
 	runStore := memory.NewFoundationRunStore()
 	approvalStore := memory.NewApprovalStore()
+	accessStore := memory.NewAccessStore()
 	previewStore := memory.NewPreviewStore()
 	intakeStore := memory.NewIntakeStore()
 	proposalStore := memory.NewProposalStore()
@@ -64,8 +66,8 @@ func main() {
 		eventLog = nil
 		runStore = nil
 
-		orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, pilotHandler := buildPostgresWiring(store, registryResolver)
-		serve(orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, pilotHandler)
+		orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, accessHandler, pilotHandler := buildPostgresWiring(store, registryResolver)
+		serve(orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, accessHandler, pilotHandler)
 		return
 	}
 
@@ -87,17 +89,19 @@ func main() {
 	devHandler := devsurface.NewHandler(runStore, maintenanceStore, eventLog)
 	artifactHandler := artifactservice.NewHandler(artifactStore, retrievalStore)
 	tenantHandler := tenantservice.NewHandler(tenantStore, eventLog)
+	accessHandler := accessservice.NewHandler(accessStore, eventLog)
 	pilotHandler := pilotservice.NewHandler(eventLog)
-	serve(orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, pilotHandler)
+	serve(orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, accessHandler, pilotHandler)
 }
 
-func buildPostgresWiring(store *pgplatform.Store, registryResolver *filesystem.RegistryResolver) (*foundation.FoundationOrchestrator, *intentservice.Handler, *previewservice.Handler, *surfaceservice.Handler, *operatorsurface.Handler, *devsurface.Handler, *artifactservice.Handler, *tenantservice.Handler, *pilotservice.Handler) {
+func buildPostgresWiring(store *pgplatform.Store, registryResolver *filesystem.RegistryResolver) (*foundation.FoundationOrchestrator, *intentservice.Handler, *previewservice.Handler, *surfaceservice.Handler, *operatorsurface.Handler, *devsurface.Handler, *artifactservice.Handler, *tenantservice.Handler, *accessservice.Handler, *pilotservice.Handler) {
 	contractRepo := pgplatform.NewContractRepository(store)
 	compiler := intent.NewCompiler(contractRepo)
 	runtimeStore := pgplatform.NewRuntimeService(store)
 	eventLog := pgplatform.NewEventLog(store)
 	runStore := pgplatform.NewFoundationRunStore(store)
 	approvalStore := pgplatform.NewApprovalStore(store)
+	accessStore := pgplatform.NewAccessStore(store)
 	previewStore := pgplatform.NewPreviewStore(store)
 	intakeStore := pgplatform.NewIntakeStore(store)
 	proposalStore := pgplatform.NewProposalStore(store)
@@ -125,11 +129,12 @@ func buildPostgresWiring(store *pgplatform.Store, registryResolver *filesystem.R
 	devHandler := devsurface.NewHandler(runStore, maintenanceStore, eventLog)
 	artifactHandler := artifactservice.NewHandler(artifactStore, retrievalStore)
 	tenantHandler := tenantservice.NewHandler(tenantStore, eventLog)
+	accessHandler := accessservice.NewHandler(accessStore, eventLog)
 	pilotHandler := pilotservice.NewHandler(eventLog)
-	return orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, pilotHandler
+	return orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, accessHandler, pilotHandler
 }
 
-func serve(orchestrator *foundation.FoundationOrchestrator, handler *intentservice.Handler, previewHandler *previewservice.Handler, surfaceHandler *surfaceservice.Handler, operatorHandler *operatorsurface.Handler, devHandler *devsurface.Handler, artifactHandler *artifactservice.Handler, tenantHandler *tenantservice.Handler, pilotHandler *pilotservice.Handler) {
+func serve(orchestrator *foundation.FoundationOrchestrator, handler *intentservice.Handler, previewHandler *previewservice.Handler, surfaceHandler *surfaceservice.Handler, operatorHandler *operatorsurface.Handler, devHandler *devsurface.Handler, artifactHandler *artifactservice.Handler, tenantHandler *tenantservice.Handler, accessHandler *accessservice.Handler, pilotHandler *pilotservice.Handler) {
 	if err := orchestrator.Validate(); err != nil {
 		log.Fatalf("intent-service wiring invalid: %v", err)
 	}
@@ -165,6 +170,7 @@ func serve(orchestrator *foundation.FoundationOrchestrator, handler *intentservi
 	mux.Handle("/v1/tenants-catalog/", tenantHandler.Routes())
 	mux.Handle("/v1/tenants-connectors/", tenantHandler.Routes())
 	mux.Handle("/v1/tenant-admin/", tenantHandler.Routes())
+	mux.Handle("/v1/tenant-access/", accessHandler.Routes())
 	mux.Handle("/v1/pilot/", pilotHandler.Routes())
 
 	addr := ":8080"

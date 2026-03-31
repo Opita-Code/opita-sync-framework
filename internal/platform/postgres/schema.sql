@@ -177,3 +177,27 @@ create table if not exists tenant_bootstrap_records (
 );
 
 create index if not exists idx_tenant_bootstrap_records_state on tenant_bootstrap_records (state);
+
+create table if not exists tenant_capability_grants (
+  grant_id text primary key,
+  tenant_id text not null,
+  state text not null,
+  payload jsonb not null,
+  created_at timestamptz not null,
+  updated_at timestamptz not null
+);
+
+create index if not exists idx_tenant_capability_grants_tenant_id on tenant_capability_grants (tenant_id);
+create index if not exists idx_tenant_capability_grants_state on tenant_capability_grants (state);
+
+create table if not exists tenant_delegation_grants (
+  grant_id text primary key,
+  tenant_id text not null,
+  state text not null,
+  payload jsonb not null,
+  created_at timestamptz not null,
+  updated_at timestamptz not null
+);
+
+create index if not exists idx_tenant_delegation_grants_tenant_id on tenant_delegation_grants (tenant_id);
+create index if not exists idx_tenant_delegation_grants_state on tenant_delegation_grants (state);
