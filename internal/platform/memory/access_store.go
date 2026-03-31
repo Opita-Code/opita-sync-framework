@@ -23,6 +23,13 @@ func (s *AccessStore) SaveGrant(grant access.CapabilityGrant) error {
 	return nil
 }
 
+func (s *AccessStore) GetGrantByID(grantID string) (access.CapabilityGrant, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	grant, found := s.grants[grantID]
+	return grant, found, nil
+}
+
 func (s *AccessStore) ListGrantsByTenant(tenantID string) ([]access.CapabilityGrant, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -40,6 +47,13 @@ func (s *AccessStore) SaveDelegation(grant access.DelegationGrant) error {
 	defer s.mu.Unlock()
 	s.delegations[grant.GrantID] = grant
 	return nil
+}
+
+func (s *AccessStore) GetDelegationByID(grantID string) (access.DelegationGrant, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	grant, found := s.delegations[grantID]
+	return grant, found, nil
 }
 
 func (s *AccessStore) ListDelegationsByTenant(tenantID string) ([]access.DelegationGrant, error) {

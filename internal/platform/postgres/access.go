@@ -29,6 +29,22 @@ func (s *AccessStore) SaveGrant(grant access.CapabilityGrant) error {
 	return nil
 }
 
+func (s *AccessStore) GetGrantByID(grantID string) (access.CapabilityGrant, bool, error) {
+	var raw []byte
+	err := s.store.DB.QueryRowContext(contextBackground(), `select payload from tenant_capability_grants where grant_id = $1`, grantID).Scan(&raw)
+	if err != nil {
+		if isNoRows(err) {
+			return access.CapabilityGrant{}, false, nil
+		}
+		return access.CapabilityGrant{}, false, fmt.Errorf("select capability grant: %w", err)
+	}
+	var grant access.CapabilityGrant
+	if err := json.Unmarshal(raw, &grant); err != nil {
+		return access.CapabilityGrant{}, false, fmt.Errorf("unmarshal capability grant: %w", err)
+	}
+	return grant, true, nil
+}
+
 func (s *AccessStore) ListGrantsByTenant(tenantID string) ([]access.CapabilityGrant, error) {
 	rows, err := s.store.DB.QueryContext(contextBackground(), `select payload from tenant_capability_grants where tenant_id = $1 order by created_at asc`, tenantID)
 	if err != nil {
@@ -67,6 +83,22 @@ func (s *AccessStore) SaveDelegation(grant access.DelegationGrant) error {
 		return fmt.Errorf("upsert delegation grant: %w", err)
 	}
 	return nil
+}
+
+func (s *AccessStore) GetDelegationByID(grantID string) (access.DelegationGrant, bool, error) {
+	var raw []byte
+	err := s.store.DB.QueryRowContext(contextBackground(), `select payload from tenant_delegation_grants where grant_id = $1`, grantID).Scan(&raw)
+	if err != nil {
+		if isNoRows(err) {
+			return access.DelegationGrant{}, false, nil
+		}
+		return access.DelegationGrant{}, false, fmt.Errorf("select delegation grant: %w", err)
+	}
+	var grant access.DelegationGrant
+	if err := json.Unmarshal(raw, &grant); err != nil {
+		return access.DelegationGrant{}, false, fmt.Errorf("unmarshal delegation grant: %w", err)
+	}
+	return grant, true, nil
 }
 
 func (s *AccessStore) ListDelegationsByTenant(tenantID string) ([]access.DelegationGrant, error) {

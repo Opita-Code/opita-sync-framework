@@ -89,7 +89,7 @@ func main() {
 	devHandler := devsurface.NewHandler(runStore, maintenanceStore, eventLog)
 	artifactHandler := artifactservice.NewHandler(artifactStore, retrievalStore)
 	tenantHandler := tenantservice.NewHandler(tenantStore, eventLog)
-	accessHandler := accessservice.NewHandler(accessStore, eventLog)
+	accessHandler := accessservice.NewHandler(accessStore, eventLog, approvalStore)
 	pilotHandler := pilotservice.NewHandler(eventLog)
 	serve(orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, accessHandler, pilotHandler)
 }
@@ -129,7 +129,7 @@ func buildPostgresWiring(store *pgplatform.Store, registryResolver *filesystem.R
 	devHandler := devsurface.NewHandler(runStore, maintenanceStore, eventLog)
 	artifactHandler := artifactservice.NewHandler(artifactStore, retrievalStore)
 	tenantHandler := tenantservice.NewHandler(tenantStore, eventLog)
-	accessHandler := accessservice.NewHandler(accessStore, eventLog)
+	accessHandler := accessservice.NewHandler(accessStore, eventLog, approvalStore)
 	pilotHandler := pilotservice.NewHandler(eventLog)
 	return orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, accessHandler, pilotHandler
 }
