@@ -98,3 +98,33 @@ func TestPilotScenarioScorecardsGroupByTraceID(t *testing.T) {
 		t.Fatalf("expected first scenario trace-alpha-01, got %#v", first["scenario_id"])
 	}
 }
+
+func TestPilotIncidentCandidatesDeriveFromCanonicalEvents(t *testing.T) {
+	eventLog := memory.NewEventLog()
+	base := time.Date(2026, 3, 30, 12, 0, 0, 0, time.UTC)
+	records := []events.Record{
+		{EventID: "1", EventType: "preview.simulation_recorded", TenantID: "tenant-alpha-ops", TraceID: "trace-alpha-01", ExecutionID: "exec-1", OccurredAt: base, Payload: map[string]any{"status": "preview_warning"}},
+		{EventID: "2", EventType: "recovery.execution_blocked", TenantID: "tenant-alpha-ops", TraceID: "trace-alpha-01", ExecutionID: "exec-1", RecoveryActionID: "recovery-1", OccurredAt: base.Add(10 * time.Second), Payload: map[string]any{"reason_codes": []string{"recovery.invalid_runtime_state.resume_after_approval"}}},
+		{EventID: "3", EventType: "approval.fingerprint_mismatch", TenantID: "tenant-alpha-ops", TraceID: "trace-alpha-01", ExecutionID: "exec-1", ApprovalRequestID: "approval-1", OccurredAt: base.Add(20 * time.Second)},
+	}
+	for _, record := range records {
+		if err := eventLog.Append(record); err != nil {
+			t.Fatalf("append event: %v", err)
+		}
+	}
+	h := pilotservice.NewHandler(eventLog)
+	req := httptest.NewRequest(http.MethodGet, "/v1/pilot/incident-candidates?tenant_id=tenant-alpha-ops&scenario_id=trace-alpha-01", nil)
+	w := httptest.NewRecorder()
+	h.Routes().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	candidates := resp["candidates"].([]any)
+	if len(candidates) != 3 {
+		t.Fatalf("expected 3 incident candidates, got %d", len(candidates))
+	}
+}

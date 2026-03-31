@@ -53,6 +53,20 @@ type pilotScorecard struct {
 	Boundary          string             `json:"boundary"`
 }
 
+type incidentCandidate struct {
+	TenantID          string   `json:"tenant_id,omitempty"`
+	ScenarioID        string   `json:"scenario_id,omitempty"`
+	ExecutionID       string   `json:"execution_id,omitempty"`
+	TraceID           string   `json:"trace_id,omitempty"`
+	Severity          string   `json:"severity"`
+	Category          string   `json:"category"`
+	Summary           string   `json:"summary"`
+	ReasonCodes       []string `json:"reason_codes,omitempty"`
+	EventType         string   `json:"event_type"`
+	ApprovalRequestID string   `json:"approval_request_id,omitempty"`
+	RecoveryActionID  string   `json:"recovery_action_id,omitempty"`
+}
+
 func NewHandler(events EventReader) *Handler {
 	return &Handler{Events: events}
 }
@@ -61,6 +75,7 @@ func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/pilot/scorecard", h.handleScorecard)
 	mux.HandleFunc("GET /v1/pilot/scorecard/scenarios", h.handleScenarioScorecards)
+	mux.HandleFunc("GET /v1/pilot/incident-candidates", h.handleIncidentCandidates)
 	return mux
 }
 
@@ -119,6 +134,33 @@ func (h *Handler) handleScenarioScorecards(w http.ResponseWriter, r *http.Reques
 		"tenant_id": tenantID,
 		"scenarios": out,
 		"boundary":  "scenario_scorecards_derived_from_trace_id",
+	})
+}
+
+func (h *Handler) handleIncidentCandidates(w http.ResponseWriter, r *http.Request) {
+	if h.Events == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "pilot.events_not_ready"})
+		return
+	}
+	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+	scenarioID := strings.TrimSpace(r.URL.Query().Get("scenario_id"))
+	records := h.Events.Records()
+	filtered := make([]events.Record, 0, len(records))
+	for _, record := range records {
+		if tenantID != "" && record.TenantID != tenantID {
+			continue
+		}
+		if scenarioID != "" && strings.TrimSpace(record.TraceID) != scenarioID {
+			continue
+		}
+		filtered = append(filtered, record)
+	}
+	candidates := buildIncidentCandidates(filtered)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"tenant_id":   tenantID,
+		"scenario_id": scenarioID,
+		"candidates":  candidates,
+		"boundary":    "incident_candidates_derived_from_canonical_event_log",
 	})
 }
 
@@ -273,6 +315,74 @@ func mapKeys(values map[string]struct{}) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func buildIncidentCandidates(records []events.Record) []incidentCandidate {
+	out := make([]incidentCandidate, 0)
+	for _, record := range records {
+		candidate, ok := buildIncidentCandidate(record)
+		if ok {
+			out = append(out, candidate)
+		}
+	}
+	return out
+}
+
+func buildIncidentCandidate(record events.Record) (incidentCandidate, bool) {
+	candidate := incidentCandidate{
+		TenantID:          record.TenantID,
+		ScenarioID:        record.TraceID,
+		ExecutionID:       record.ExecutionID,
+		TraceID:           record.TraceID,
+		EventType:         record.EventType,
+		ApprovalRequestID: record.ApprovalRequestID,
+		RecoveryActionID:  record.RecoveryActionID,
+	}
+	switch record.EventType {
+	case "approval.fingerprint_mismatch":
+		candidate.Severity = "high"
+		candidate.Category = "fingerprint_mismatch"
+		candidate.Summary = "approved fingerprint no longer matches the current execution contract"
+		candidate.ReasonCodes = []string{"approval.fingerprint_mismatch"}
+		return candidate, true
+	case "recovery.execution_blocked":
+		candidate.Severity = "high"
+		candidate.Category = "recovery_blocked"
+		candidate.Summary = "recovery candidate became blocked by runtime or approval constraints"
+		candidate.ReasonCodes = payloadStringSlice(record.Payload, "reason_codes")
+		return candidate, true
+	case "preview.simulation_recorded":
+		status, _ := record.Payload["status"].(string)
+		if status == "preview_warning" || status == "preview_blocked" {
+			candidate.Severity = map[string]string{"preview_warning": "medium", "preview_blocked": "high"}[status]
+			candidate.Category = "preview_signal"
+			candidate.Summary = "preview simulation emitted a warning or blocked signal"
+			candidate.ReasonCodes = []string{status}
+			return candidate, true
+		}
+	}
+	return incidentCandidate{}, false
+}
+
+func payloadStringSlice(payload map[string]any, key string) []string {
+	values, ok := payload[key]
+	if !ok {
+		return nil
+	}
+	switch typed := values.(type) {
+	case []string:
+		return typed
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, value := range typed {
+			if s, ok := value.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

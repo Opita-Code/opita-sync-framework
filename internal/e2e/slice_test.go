@@ -225,6 +225,10 @@ func TestFullSliceCorridor(t *testing.T) {
 	if len(scenarioResp["scenarios"].([]any)) == 0 {
 		t.Fatalf("expected scenario scorecards")
 	}
+	incidentResp := getJSON(t, server.URL+"/v1/pilot/incident-candidates?tenant_id=tenant-demo&scenario_id=trace-demo-1")
+	if _, ok := incidentResp["candidates"]; !ok {
+		t.Fatalf("expected incident candidates payload")
+	}
 
 	postJSON(t, server.URL+"/v1/maintenance-actions", map[string]any{
 		"tenant_id":               "tenant-demo",

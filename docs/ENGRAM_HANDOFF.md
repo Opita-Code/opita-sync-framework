@@ -76,6 +76,8 @@ La suite completa pasa con:
   - cuenta approvals, releases, blocks, mismatches, recoveries y reconstructability
   - `GET /v1/pilot/scorecard/scenarios?tenant_id=...`
   - scorecard por escenario derivada de `trace_id`
+  - `GET /v1/pilot/incident-candidates?tenant_id=...&scenario_id=...`
+  - incident candidates derivados de warnings, blocked recoveries y fingerprint mismatches
 
 ## Bugfixes importantes recientes
 
