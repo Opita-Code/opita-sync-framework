@@ -26,4 +26,5 @@ type Record struct {
 
 type EventLog interface {
 	Append(record Record) error
+	Records() []Record
 }

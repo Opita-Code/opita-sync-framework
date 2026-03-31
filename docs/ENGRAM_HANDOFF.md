@@ -69,6 +69,11 @@ La suite completa pasa con:
   - idempotency key obligatoria para execute
   - evidence refs mínimas del connector
 
+- instrumentación mínima del piloto
+  - `GET /v1/pilot/scorecard?tenant_id=...`
+  - métricas derivadas del event log canónico
+  - cuenta approvals, releases, blocks, mismatches, recoveries y reconstructability
+
 ## Bugfixes importantes recientes
 
 - fix de colisión de IDs en orchestrator usando contador atómico adicional sobre `UnixNano()` para `execution_id`, `approval_request_id` y `event_id`
@@ -79,7 +84,8 @@ Seguir con:
 
 1. sincronizar y publicar estos cambios del framework si todavía no están en remoto
 2. preparar ejecución real del piloto contra tenants definidos en el repo producto
-3. evaluar si corresponde abrir resolución dinámica por dominio en lugar de usar bindings default
+3. usar `GET /v1/pilot/scorecard` para alimentar la scorecard del piloto
+4. evaluar si corresponde abrir resolución dinámica por dominio en lugar de usar bindings default
 
 ## Archivos clave para retomar
 

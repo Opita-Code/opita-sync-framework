@@ -50,3 +50,24 @@ func (l *EventLog) RecordsByExecution(executionID string) []events.Record {
 	}
 	return out
 }
+
+func (l *EventLog) Records() []events.Record {
+	rows, err := l.store.DB.QueryContext(contextBackground(), `select payload from event_records order by occurred_at asc`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := make([]events.Record, 0)
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			continue
+		}
+		var record events.Record
+		if err := json.Unmarshal(raw, &record); err != nil {
+			continue
+		}
+		out = append(out, record)
+	}
+	return out
+}

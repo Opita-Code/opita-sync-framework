@@ -14,6 +14,7 @@ import (
 	"opita-sync-framework/internal/app/devsurface"
 	"opita-sync-framework/internal/app/intentservice"
 	"opita-sync-framework/internal/app/operatorsurface"
+	"opita-sync-framework/internal/app/pilotservice"
 	"opita-sync-framework/internal/app/previewservice"
 	"opita-sync-framework/internal/app/surfaceservice"
 	"opita-sync-framework/internal/engine/foundation"
@@ -90,6 +91,7 @@ func TestFullSliceCorridor(t *testing.T) {
 	mux.Handle("/v1/artifacts", artifactHandler.Routes())
 	mux.Handle("/v1/artifacts/", artifactHandler.Routes())
 	mux.Handle("/v1/retrieval/search", artifactHandler.Routes())
+	mux.Handle("/v1/pilot/", pilotservice.NewHandler(eventLog).Routes())
 
 	server := httptest.NewServer(mux)
 	defer server.Close()
@@ -215,6 +217,10 @@ func TestFullSliceCorridor(t *testing.T) {
 		t.Fatalf("expected operator workspace boundary, got %#v", operatorWorkspace["boundary"])
 	}
 	getJSON(t, server.URL+"/v1/debug/semantic?execution_id="+executionID)
+	pilotResp := getJSON(t, server.URL+"/v1/pilot/scorecard?tenant_id=tenant-demo")
+	if pilotResp["event_count"].(float64) == 0 {
+		t.Fatalf("expected pilot scorecard events")
+	}
 
 	postJSON(t, server.URL+"/v1/maintenance-actions", map[string]any{
 		"tenant_id":               "tenant-demo",

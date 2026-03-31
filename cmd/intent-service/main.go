@@ -14,6 +14,7 @@ import (
 	"opita-sync-framework/internal/app/devsurface"
 	"opita-sync-framework/internal/app/intentservice"
 	"opita-sync-framework/internal/app/operatorsurface"
+	"opita-sync-framework/internal/app/pilotservice"
 	"opita-sync-framework/internal/app/previewservice"
 	"opita-sync-framework/internal/app/surfaceservice"
 	"opita-sync-framework/internal/app/tenantservice"
@@ -63,8 +64,8 @@ func main() {
 		eventLog = nil
 		runStore = nil
 
-		orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler := buildPostgresWiring(store, registryResolver)
-		serve(orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler)
+		orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, pilotHandler := buildPostgresWiring(store, registryResolver)
+		serve(orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, pilotHandler)
 		return
 	}
 
@@ -86,10 +87,11 @@ func main() {
 	devHandler := devsurface.NewHandler(runStore, maintenanceStore, eventLog)
 	artifactHandler := artifactservice.NewHandler(artifactStore, retrievalStore)
 	tenantHandler := tenantservice.NewHandler(tenantStore, eventLog)
-	serve(orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler)
+	pilotHandler := pilotservice.NewHandler(eventLog)
+	serve(orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, pilotHandler)
 }
 
-func buildPostgresWiring(store *pgplatform.Store, registryResolver *filesystem.RegistryResolver) (*foundation.FoundationOrchestrator, *intentservice.Handler, *previewservice.Handler, *surfaceservice.Handler, *operatorsurface.Handler, *devsurface.Handler, *artifactservice.Handler, *tenantservice.Handler) {
+func buildPostgresWiring(store *pgplatform.Store, registryResolver *filesystem.RegistryResolver) (*foundation.FoundationOrchestrator, *intentservice.Handler, *previewservice.Handler, *surfaceservice.Handler, *operatorsurface.Handler, *devsurface.Handler, *artifactservice.Handler, *tenantservice.Handler, *pilotservice.Handler) {
 	contractRepo := pgplatform.NewContractRepository(store)
 	compiler := intent.NewCompiler(contractRepo)
 	runtimeStore := pgplatform.NewRuntimeService(store)
@@ -123,10 +125,11 @@ func buildPostgresWiring(store *pgplatform.Store, registryResolver *filesystem.R
 	devHandler := devsurface.NewHandler(runStore, maintenanceStore, eventLog)
 	artifactHandler := artifactservice.NewHandler(artifactStore, retrievalStore)
 	tenantHandler := tenantservice.NewHandler(tenantStore, eventLog)
-	return orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler
+	pilotHandler := pilotservice.NewHandler(eventLog)
+	return orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, pilotHandler
 }
 
-func serve(orchestrator *foundation.FoundationOrchestrator, handler *intentservice.Handler, previewHandler *previewservice.Handler, surfaceHandler *surfaceservice.Handler, operatorHandler *operatorsurface.Handler, devHandler *devsurface.Handler, artifactHandler *artifactservice.Handler, tenantHandler *tenantservice.Handler) {
+func serve(orchestrator *foundation.FoundationOrchestrator, handler *intentservice.Handler, previewHandler *previewservice.Handler, surfaceHandler *surfaceservice.Handler, operatorHandler *operatorsurface.Handler, devHandler *devsurface.Handler, artifactHandler *artifactservice.Handler, tenantHandler *tenantservice.Handler, pilotHandler *pilotservice.Handler) {
 	if err := orchestrator.Validate(); err != nil {
 		log.Fatalf("intent-service wiring invalid: %v", err)
 	}
@@ -161,6 +164,7 @@ func serve(orchestrator *foundation.FoundationOrchestrator, handler *intentservi
 	mux.Handle("/v1/tenants/bootstrap", tenantHandler.Routes())
 	mux.Handle("/v1/tenants-catalog/", tenantHandler.Routes())
 	mux.Handle("/v1/tenants-connectors/", tenantHandler.Routes())
+	mux.Handle("/v1/pilot/", pilotHandler.Routes())
 
 	server := &http.Server{
 		Addr:              ":8080",

@@ -383,6 +383,23 @@ func (h *Handler) handleApprovalDecision(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		if current.SourceContractFingerprint != "" && execution.ContractFingerprint != current.SourceContractFingerprint {
+			if h.Events != nil {
+				_ = h.Events.Append(events.Record{
+					EventID:             fmt.Sprintf("event-%d", time.Now().UTC().UnixNano()),
+					EventType:           "approval.fingerprint_mismatch",
+					TenantID:            current.TenantID,
+					TraceID:             current.TraceID,
+					ContractID:          current.ContractID,
+					ContractFingerprint: execution.ContractFingerprint,
+					ExecutionID:         current.ExecutionID,
+					ApprovalRequestID:   current.ApprovalRequestID,
+					OccurredAt:          time.Now().UTC(),
+					Payload: map[string]any{
+						"approved_contract_fingerprint": current.SourceContractFingerprint,
+						"current_contract_fingerprint":  execution.ContractFingerprint,
+					},
+				})
+			}
 			writeJSON(w, http.StatusConflict, map[string]any{
 				"error": map[string]any{
 					"code":    "approval.fingerprint_mismatch",
