@@ -66,6 +66,16 @@ func (p *TenantConfigurationProvider) Execute(req ExecuteRequest) (ExecuteRespon
 		retryable = true
 		restrictions = append(restrictions, "restricted-connector-latency-and-guardrails")
 	}
+	if strings.Contains(req.Meta.TargetRef, "connector.execution.enterprise") || strings.Contains(req.Meta.BindingRef, "enterprise") {
+		technicalState = "pending_verification"
+		normalized = fmt.Sprintf("tenant configuration applied under enterprise connector verification controls for %s using %s", req.Meta.TargetRef, req.Meta.CapabilityID)
+		retryable = true
+		restrictions = append(restrictions,
+			"enterprise-connector-external-dependency",
+			"enterprise-connector-compliance-window",
+			"enterprise-connector-manual-verification-required",
+		)
+	}
 	resp := ExecuteResponse{
 		RawResult:          fmt.Sprintf("applied:%s:%s", req.Meta.TargetRef, req.Meta.CapabilityID),
 		NormalizedResult:   normalized,
@@ -116,6 +126,16 @@ func (p *TenantConfigurationProvider) GetRiskProfile(capabilityID string, target
 		suggestedApproval = "pre_execution"
 		restrictions = append(restrictions, "restricted-connector-latency-and-guardrails")
 	}
+	if strings.Contains(targetScope, "connector.execution.enterprise") {
+		risk = "high"
+		securityRisk = "high"
+		suggestedApproval = "pre_execution"
+		restrictions = append(restrictions,
+			"enterprise-connector-external-dependency",
+			"enterprise-connector-compliance-window",
+			"enterprise-connector-manual-verification-required",
+		)
+	}
 	return RiskProfileResponse{
 		BusinessRisk:       risk,
 		SecurityRisk:       securityRisk,
@@ -130,6 +150,9 @@ func (p *TenantConfigurationProvider) GetRequiredScopes(capabilityID string) (Re
 		required = append(required, "scope:tenant-config.write", "scope:tenant-config.approve")
 	} else {
 		required = append(required, "scope:tenant-config.write")
+	}
+	if strings.Contains(capabilityID, "execution") {
+		required = append(required, "scope:tenant-config.external-system")
 	}
 	return RequiredScopesResponse{Required: required, Optional: []string{"scope:tenant-config.inspect"}}, nil
 }
@@ -182,6 +205,15 @@ func classifyTenantConfigOperation(capabilityID, targetRef string) (classificati
 		classification = "restricted"
 		risk = "high"
 		restrictions = append(restrictions, "restricted-connector-latency-and-guardrails")
+	}
+	if strings.Contains(combined, "connector.execution.enterprise") {
+		classification = "restricted"
+		risk = "high"
+		restrictions = append(restrictions,
+			"enterprise-connector-external-dependency",
+			"enterprise-connector-compliance-window",
+			"enterprise-connector-manual-verification-required",
+		)
 	}
 	return classification, risk, restrictions
 }

@@ -314,6 +314,7 @@ func resolveConnectorProjection(refs []string) ([]tenant.ConnectorProjection, bo
 		"connector.default":              {ConnectorRef: "connector.default", Enabled: true, Scope: "governed_core", SupportedActions: []string{"inspect", "dry_run", "execute", "normalize", "compensate"}},
 		"connector.execution.default":    {ConnectorRef: "connector.execution.default", Enabled: true, Scope: "execution", SupportedActions: []string{"inspect", "dry_run", "execute", "normalize", "compensate"}},
 		"connector.execution.restricted": {ConnectorRef: "connector.execution.restricted", Enabled: true, Scope: "execution_restricted", SupportedActions: []string{"inspect", "dry_run", "execute", "normalize", "compensate"}},
+		"connector.execution.enterprise": {ConnectorRef: "connector.execution.enterprise", Enabled: true, Scope: "execution_enterprise", SupportedActions: []string{"inspect", "dry_run", "execute", "normalize", "compensate"}},
 		"connector.plan.default":         {ConnectorRef: "connector.plan.default", Enabled: true, Scope: "planning", SupportedActions: []string{"inspect", "dry_run", "normalize"}},
 	}
 	out := make([]tenant.ConnectorProjection, 0, len(refs))

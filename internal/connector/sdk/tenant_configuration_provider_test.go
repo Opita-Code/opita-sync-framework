@@ -80,3 +80,34 @@ func TestTenantConfigurationProviderRestrictedConnectorRaisesRisk(t *testing.T) 
 		t.Fatalf("expected restricted connector execution semantics, got %+v", resp)
 	}
 }
+
+func TestTenantConfigurationProviderEnterpriseConnectorDemandsVerification(t *testing.T) {
+	p := sdk.NewTenantConfigurationProvider()
+	risk, err := p.GetRiskProfile("tenant.execution.compile_governed_intent", "tenant-1/connectors/connector.execution.enterprise")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if risk.BusinessRisk != "high" || len(risk.AggravatingFactors) == 0 {
+		t.Fatalf("expected high risk with aggravating factors, got %+v", risk)
+	}
+	scopes, err := p.GetRequiredScopes("tenant.execution.compile_governed_intent")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	foundExternal := false
+	for _, scope := range scopes.Required {
+		if scope == "scope:tenant-config.external-system" {
+			foundExternal = true
+		}
+	}
+	if !foundExternal {
+		t.Fatalf("expected external system scope in %+v", scopes)
+	}
+	resp, err := p.Execute(sdk.ExecuteRequest{Meta: sdk.RequestMeta{TenantID: "tenant-1", CapabilityID: "tenant.execution.compile_governed_intent", BindingRef: "binding-capability-execution-enterprise-dev", IdempotencyKey: "idem-enterprise", TraceRef: "trace-1", TargetRef: "tenant-1/connectors/connector.execution.enterprise", RequestedScope: "tenant_config_change", OccurredAt: time.Now().UTC()}})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if resp.TechnicalState != "pending_verification" || !resp.Retryable || !resp.Compensable {
+		t.Fatalf("expected enterprise verification semantics, got %+v", resp)
+	}
+}
