@@ -62,3 +62,21 @@ func TestTenantConfigurationProviderCompensateReturnsEvidence(t *testing.T) {
 		t.Fatalf("expected compensation evidence, got %+v", resp)
 	}
 }
+
+func TestTenantConfigurationProviderRestrictedConnectorRaisesRisk(t *testing.T) {
+	p := sdk.NewTenantConfigurationProvider()
+	risk, err := p.GetRiskProfile("tenant.execution.compile_governed_intent", "tenant-1/connectors/connector.execution.restricted")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if risk.BusinessRisk != "high" || risk.SecurityRisk != "high" {
+		t.Fatalf("expected high risk for restricted connector, got %+v", risk)
+	}
+	resp, err := p.Execute(sdk.ExecuteRequest{Meta: sdk.RequestMeta{TenantID: "tenant-1", CapabilityID: "tenant.execution.compile_governed_intent", BindingRef: "binding-capability-execution-restricted-dev", IdempotencyKey: "idem-restricted", TraceRef: "trace-1", TargetRef: "tenant-1/connectors/connector.execution.restricted", RequestedScope: "tenant_config_change", OccurredAt: time.Now().UTC()}})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if resp.TechnicalState != "success_with_restrictions" || !resp.Retryable {
+		t.Fatalf("expected restricted connector execution semantics, got %+v", resp)
+	}
+}

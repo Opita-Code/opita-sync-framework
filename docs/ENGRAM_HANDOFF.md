@@ -68,6 +68,7 @@ La suite completa pasa con:
   - manifests default alineados a `provider://tenant.configuration/*`
   - idempotency key obligatoria para execute
   - evidence refs mínimas del connector
+  - soporte adicional para `connector.execution.restricted` con mayor riesgo y restricciones
 
 - instrumentación mínima del piloto
   - `GET /v1/pilot/scorecard?tenant_id=...`
@@ -82,8 +83,8 @@ La suite completa pasa con:
 
 Seguir con:
 
-1. sincronizar y publicar estos cambios del framework si todavía no están en remoto
-2. preparar ejecución real del piloto contra tenants definidos en el repo producto
+1. usar el conector `connector.execution.restricted` como baseline más exigente del dominio
+2. preparar `P0.5` con la evidencia consolidada del piloto
 3. usar `GET /v1/pilot/scorecard` para alimentar la scorecard del piloto
 4. evaluar si corresponde abrir resolución dinámica por dominio en lugar de usar bindings default
 

@@ -59,12 +59,19 @@ func (p *TenantConfigurationProvider) Execute(req ExecuteRequest) (ExecuteRespon
 	if len(restrictions) > 0 {
 		normalized = fmt.Sprintf("tenant configuration applied with restrictions for %s using %s", req.Meta.TargetRef, req.Meta.CapabilityID)
 	}
+	retryable := false
+	if strings.Contains(req.Meta.TargetRef, "connector.execution.restricted") || strings.Contains(req.Meta.BindingRef, "restricted") {
+		technicalState = "success_with_restrictions"
+		normalized = fmt.Sprintf("tenant configuration applied under restricted connector controls for %s using %s", req.Meta.TargetRef, req.Meta.CapabilityID)
+		retryable = true
+		restrictions = append(restrictions, "restricted-connector-latency-and-guardrails")
+	}
 	resp := ExecuteResponse{
 		RawResult:          fmt.Sprintf("applied:%s:%s", req.Meta.TargetRef, req.Meta.CapabilityID),
 		NormalizedResult:   normalized,
 		TechnicalState:     technicalState,
 		ClassificationHint: classification,
-		Retryable:          false,
+		Retryable:          retryable,
 		Compensable:        risk != "low",
 		Evidence:           tenantEvidence(req.Meta, req.Meta.IdempotencyKey, "execute"),
 	}
@@ -102,6 +109,12 @@ func (p *TenantConfigurationProvider) GetRiskProfile(capabilityID string, target
 	if risk == "high" {
 		securityRisk = "high"
 		suggestedApproval = "pre_execution"
+	}
+	if strings.Contains(targetScope, "connector.execution.restricted") {
+		risk = "high"
+		securityRisk = "high"
+		suggestedApproval = "pre_execution"
+		restrictions = append(restrictions, "restricted-connector-latency-and-guardrails")
 	}
 	return RiskProfileResponse{
 		BusinessRisk:       risk,
@@ -164,6 +177,11 @@ func classifyTenantConfigOperation(capabilityID, targetRef string) (classificati
 			risk = "medium"
 		}
 		restrictions = append(restrictions, "approval-or-execution-path-change")
+	}
+	if strings.Contains(combined, "connector.execution.restricted") {
+		classification = "restricted"
+		risk = "high"
+		restrictions = append(restrictions, "restricted-connector-latency-and-guardrails")
 	}
 	return classification, risk, restrictions
 }
