@@ -46,7 +46,7 @@ func (o *FoundationOrchestrator) Run(ctx context.Context, input intent.IntentInp
 	}
 
 	resolution, err := o.Registry.Resolve(registry.ResolutionRequest{
-		CapabilityID:          capabilityIDForResultType(contract.TipoResultadoEsperado),
+		CapabilityID:          capabilityIDForContract(contract),
 		ContractSchemaVersion: contract.ContractVersion,
 		SupportedResultType:   string(contract.TipoResultadoEsperado),
 		Environment:           "dev",
@@ -226,6 +226,13 @@ func (o *FoundationOrchestrator) Run(ctx context.Context, input intent.IntentInp
 	}
 
 	return result, nil
+}
+
+func capabilityIDForContract(contract intent.CompiledContract) string {
+	if contract.RequestedCapabilityID != "" {
+		return contract.RequestedCapabilityID
+	}
+	return capabilityIDForResultType(contract.TipoResultadoEsperado)
 }
 
 func capabilityIDForResultType(resultType intent.ResultType) string {

@@ -56,6 +56,7 @@ type RunReader interface {
 
 type compileRequest struct {
 	RequestID             string   `json:"request_id"`
+	RequestedCapabilityID string   `json:"requested_capability_id,omitempty"`
 	TenantID              string   `json:"tenant_id"`
 	WorkspaceID           string   `json:"workspace_id"`
 	UserID                string   `json:"user_id"`
@@ -135,6 +136,7 @@ func (h *Handler) handleCompile(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.Orchestrator.Run(r.Context(), intent.IntentInput{
 		RequestID:             req.RequestID,
+		RequestedCapabilityID: req.RequestedCapabilityID,
 		TenantID:              req.TenantID,
 		WorkspaceID:           req.WorkspaceID,
 		UserID:                req.UserID,
@@ -182,18 +184,19 @@ func (h *Handler) handleCompile(w http.ResponseWriter, r *http.Request) {
 		Approval:       result.Approval,
 		Diagnostics:    result.Report.Diagnostics,
 		Correlations: map[string]string{
-			"tenant_id":             result.Contract.TenantID,
-			"contract_id":           result.Contract.ContractID,
-			"contract_fingerprint":  result.Contract.Fingerprint,
-			"execution_id":          result.Execution.ExecutionID,
-			"trace_id":              result.Execution.TraceID,
-			"policy_decision_id":    result.PolicyDecision.PolicyDecisionID,
-			"conversation_turn_id":  result.Contract.ConversationTurnID,
-			"intake_session_id":     result.Contract.IntakeSessionID,
-			"intent_candidate_id":   result.Contract.IntentCandidateID,
-			"proposal_draft_id":     result.Contract.ProposalDraftID,
-			"patchset_candidate_id": result.Contract.PatchsetCandidateID,
-			"preview_candidate_id":  result.Contract.PreviewCandidateID,
+			"requested_capability_id": result.Contract.RequestedCapabilityID,
+			"tenant_id":               result.Contract.TenantID,
+			"contract_id":             result.Contract.ContractID,
+			"contract_fingerprint":    result.Contract.Fingerprint,
+			"execution_id":            result.Execution.ExecutionID,
+			"trace_id":                result.Execution.TraceID,
+			"policy_decision_id":      result.PolicyDecision.PolicyDecisionID,
+			"conversation_turn_id":    result.Contract.ConversationTurnID,
+			"intake_session_id":       result.Contract.IntakeSessionID,
+			"intent_candidate_id":     result.Contract.IntentCandidateID,
+			"proposal_draft_id":       result.Contract.ProposalDraftID,
+			"patchset_candidate_id":   result.Contract.PatchsetCandidateID,
+			"preview_candidate_id":    result.Contract.PreviewCandidateID,
 		},
 	})
 }

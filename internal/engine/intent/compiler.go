@@ -72,6 +72,7 @@ func (c *Compiler) Compile(ctx context.Context, input IntentInput) (CompiledCont
 		ContractID:            buildContractID(canonical),
 		ContractVersion:       "1.0",
 		RequestID:             canonical.RequestID,
+		RequestedCapabilityID: canonical.RequestedCapabilityID,
 		TenantID:              canonical.TenantID,
 		WorkspaceID:           canonical.WorkspaceID,
 		UserID:                canonical.UserID,
@@ -118,6 +119,7 @@ func (c *Compiler) Compile(ctx context.Context, input IntentInput) (CompiledCont
 func normalize(input IntentInput) CanonicalIntent {
 	canonical := CanonicalIntent{
 		RequestID:             strings.TrimSpace(input.RequestID),
+		RequestedCapabilityID: strings.TrimSpace(input.RequestedCapabilityID),
 		TenantID:              strings.TrimSpace(input.TenantID),
 		WorkspaceID:           strings.TrimSpace(input.WorkspaceID),
 		UserID:                strings.TrimSpace(input.UserID),
@@ -182,6 +184,7 @@ func validate(intent CanonicalIntent) []Diagnostic {
 func calculateFingerprint(intent CanonicalIntent) (string, error) {
 	payload := map[string]any{
 		"request_id":                 intent.RequestID,
+		"requested_capability_id":    intent.RequestedCapabilityID,
 		"tenant_id":                  intent.TenantID,
 		"workspace_id":               intent.WorkspaceID,
 		"user_id":                    intent.UserID,

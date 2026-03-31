@@ -94,3 +94,43 @@ func TestCompilerRejectsInvalidResultType(t *testing.T) {
 		t.Fatalf("expected rejected status, got %s", report.Status)
 	}
 }
+
+func TestCompilerFingerprintChangesWhenRequestedCapabilityChanges(t *testing.T) {
+	repo := memory.NewContractRepository()
+	compiler := intent.NewCompiler(repo)
+	base := intent.IntentInput{
+		RequestID:             "req-capability",
+		TenantID:              "tenant-1",
+		WorkspaceID:           "workspace-1",
+		UserID:                "user-1",
+		SessionID:             "session-1",
+		Objetivo:              "Contrato con capability explicita",
+		Alcance:               "test-scope",
+		TipoResultadoEsperado: intent.ResultTypePlan,
+		AutonomiaSolicitada:   intent.AutonomyAssisted,
+		CreatedAt:             time.Now().UTC(),
+	}
+	first, _, err := compiler.Compile(context.Background(), base)
+	if err != nil {
+		t.Fatalf("first compile failed: %v", err)
+	}
+	second, _, err := compiler.Compile(context.Background(), intent.IntentInput{
+		RequestID:             base.RequestID,
+		RequestedCapabilityID: "capability.plan.default",
+		TenantID:              base.TenantID,
+		WorkspaceID:           base.WorkspaceID,
+		UserID:                base.UserID,
+		SessionID:             base.SessionID,
+		Objetivo:              base.Objetivo,
+		Alcance:               base.Alcance,
+		TipoResultadoEsperado: base.TipoResultadoEsperado,
+		AutonomiaSolicitada:   base.AutonomiaSolicitada,
+		CreatedAt:             base.CreatedAt,
+	})
+	if err != nil {
+		t.Fatalf("second compile failed: %v", err)
+	}
+	if first.Fingerprint == second.Fingerprint {
+		t.Fatalf("expected different fingerprint when requested_capability_id changes")
+	}
+}

@@ -166,6 +166,7 @@ func TestFullSliceCorridor(t *testing.T) {
 
 	compileResp := postJSON(t, server.URL+"/v1/intents/compile", map[string]any{
 		"request_id":                 "req-demo-1",
+		"requested_capability_id":    "capability.execution.default",
 		"tenant_id":                  "tenant-demo",
 		"workspace_id":               "workspace-demo",
 		"user_id":                    "user-demo",
@@ -211,6 +212,9 @@ func TestFullSliceCorridor(t *testing.T) {
 	inspectionResp := getJSON(t, server.URL+"/v1/inspection/executions/"+executionID)
 	if len(inspectionResp["conversation_turn_refs"].([]any)) == 0 || len(inspectionResp["proposal_draft_refs"].([]any)) == 0 || len(inspectionResp["preview_candidate_refs"].([]any)) == 0 {
 		t.Fatalf("expected correlated refs in inspection view, got %#v", inspectionResp)
+	}
+	if compileResp["correlations"].(map[string]any)["requested_capability_id"] != "capability.execution.default" {
+		t.Fatalf("expected requested capability correlation in compile response")
 	}
 	operatorWorkspace := getJSON(t, server.URL+"/v1/operator/executions/"+executionID+"/workspace")
 	if operatorWorkspace["boundary"] != "operator_surface_reads_and_requests_kernel_executes" {

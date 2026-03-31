@@ -32,6 +32,7 @@ const (
 
 type IntentInput struct {
 	RequestID             string
+	RequestedCapabilityID string
 	TenantID              string
 	WorkspaceID           string
 	UserID                string
@@ -58,6 +59,7 @@ type IntentInput struct {
 
 type CanonicalIntent struct {
 	RequestID             string
+	RequestedCapabilityID string
 	TenantID              string
 	WorkspaceID           string
 	UserID                string
@@ -94,6 +96,7 @@ type CompiledContract struct {
 	ContractID            string
 	ContractVersion       string
 	RequestID             string
+	RequestedCapabilityID string
 	TenantID              string
 	WorkspaceID           string
 	UserID                string
