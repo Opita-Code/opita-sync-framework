@@ -164,10 +164,18 @@ func serve(orchestrator *foundation.FoundationOrchestrator, handler *intentservi
 	mux.Handle("/v1/tenants/bootstrap", tenantHandler.Routes())
 	mux.Handle("/v1/tenants-catalog/", tenantHandler.Routes())
 	mux.Handle("/v1/tenants-connectors/", tenantHandler.Routes())
+	mux.Handle("/v1/tenant-admin/", tenantHandler.Routes())
 	mux.Handle("/v1/pilot/", pilotHandler.Routes())
 
+	addr := ":8080"
+	if port := strings.TrimSpace(os.Getenv("PORT")); port != "" {
+		if !strings.HasPrefix(port, ":") {
+			port = ":" + port
+		}
+		addr = port
+	}
 	server := &http.Server{
-		Addr:              ":8080",
+		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}

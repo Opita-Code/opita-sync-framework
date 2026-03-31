@@ -25,6 +25,54 @@ type Handler struct {
 	Events EventWriter
 }
 
+type tenantAdminWorkspace struct {
+	TenantID   string               `json:"tenant_id"`
+	TenantName string               `json:"tenant_name"`
+	State      tenant.State         `json:"state"`
+	Summary    tenantSummaryCard    `json:"summary"`
+	Governance tenantGovernanceCard `json:"governance"`
+	Catalog    tenantCatalogCard    `json:"catalog"`
+	Connectors tenantConnectorCard  `json:"connectors"`
+	Impact     tenantImpactCard     `json:"impact"`
+	Boundary   string               `json:"boundary"`
+}
+
+type tenantSummaryCard struct {
+	Operable        bool     `json:"operable"`
+	FailedChecks    []string `json:"failed_checks"`
+	RecommendedNext []string `json:"recommended_next_actions"`
+	Summary         string   `json:"summary"`
+}
+
+type tenantGovernanceCard struct {
+	PolicyProfile         string   `json:"policy_profile"`
+	ApprovalProfile       string   `json:"approval_profile"`
+	ClassificationProfile string   `json:"classification_profile"`
+	Guardrails            []string `json:"guardrails"`
+	Summary               string   `json:"summary"`
+}
+
+type tenantCatalogCard struct {
+	VisibleCapabilities    int      `json:"visible_capabilities"`
+	ApprovalSensitive      int      `json:"approval_sensitive_capabilities"`
+	RestrictedCapabilities int      `json:"restricted_capabilities"`
+	HighRiskCapabilities   []string `json:"high_risk_capabilities"`
+	Summary                string   `json:"summary"`
+}
+
+type tenantConnectorCard struct {
+	EnabledConnectors    int      `json:"enabled_connectors"`
+	RestrictedConnectors []string `json:"restricted_connectors"`
+	ExecutionConnectors  []string `json:"execution_connectors"`
+	Summary              string   `json:"summary"`
+}
+
+type tenantImpactCard struct {
+	RequiresApprovalAreas []string `json:"requires_approval_areas"`
+	SensitiveAreas        []string `json:"sensitive_areas"`
+	PromotionAdvice       string   `json:"promotion_advice"`
+}
+
 type bootstrapRequest struct {
 	TenantID                 string         `json:"tenant_id"`
 	TenantName               string         `json:"tenant_name"`
@@ -47,6 +95,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/tenants/", h.handleGetTenant)
 	mux.HandleFunc("GET /v1/tenants-catalog/", h.handleGetTenantCatalog)
 	mux.HandleFunc("GET /v1/tenants-connectors/", h.handleGetTenantConnectors)
+	mux.HandleFunc("GET /v1/tenant-admin/workspace/", h.handleGetTenantAdminWorkspace)
 	return mux
 }
 
@@ -193,6 +242,26 @@ func (h *Handler) handleGetTenantConnectors(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tenant_id": tenantID, "connector_projection": record.ConnectorProjection})
+}
+
+func (h *Handler) handleGetTenantAdminWorkspace(w http.ResponseWriter, r *http.Request) {
+	tenantID := strings.TrimPrefix(r.URL.Path, "/v1/tenant-admin/workspace/")
+	tenantID = strings.TrimSuffix(tenantID, "/")
+	if tenantID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "tenant.missing_id"})
+		return
+	}
+	record, found, err := h.Store.GetByTenantID(tenantID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "tenant.lookup_failed", "message": err.Error()})
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "tenant.not_found"})
+		return
+	}
+	workspace := buildTenantAdminWorkspace(record)
+	writeJSON(w, http.StatusOK, workspace)
 }
 
 func validateBootstrap(req bootstrapRequest, policyOK, approvalOK, classificationOK, catalogOK, connectorOK bool) []tenant.OperabilityCheck {
@@ -357,6 +426,102 @@ func cleanStrings(values []string) []string {
 		}
 	}
 	return out
+}
+
+func buildTenantAdminWorkspace(record tenant.BootstrapRecord) tenantAdminWorkspace {
+	failedChecks := make([]string, 0)
+	for _, check := range record.OperabilityReport.Checks {
+		if !check.Passed {
+			failedChecks = append(failedChecks, check.CheckName)
+		}
+	}
+	highRiskCapabilities := make([]string, 0)
+	restrictedCapabilities := 0
+	approvalSensitive := 0
+	for _, capability := range record.CatalogProjection {
+		if capability.RequiresApproval {
+			approvalSensitive++
+		}
+		if capability.Sensitivity == "restricted" {
+			restrictedCapabilities++
+		}
+		if capability.RiskLevel == "high" {
+			highRiskCapabilities = append(highRiskCapabilities, capability.CapabilityID)
+		}
+	}
+	restrictedConnectors := make([]string, 0)
+	executionConnectors := make([]string, 0)
+	for _, connector := range record.ConnectorProjection {
+		if strings.Contains(connector.Scope, "restricted") {
+			restrictedConnectors = append(restrictedConnectors, connector.ConnectorRef)
+		}
+		if strings.Contains(connector.Scope, "execution") {
+			executionConnectors = append(executionConnectors, connector.ConnectorRef)
+		}
+	}
+	requiresApprovalAreas := make([]string, 0)
+	if approvalSensitive > 0 {
+		requiresApprovalAreas = append(requiresApprovalAreas, "approval-sensitive capabilities")
+	}
+	if len(restrictedConnectors) > 0 {
+		requiresApprovalAreas = append(requiresApprovalAreas, "restricted connectors")
+	}
+	sensitiveAreas := make([]string, 0)
+	if record.ClassificationBaseline.RedactionRequired {
+		sensitiveAreas = append(sensitiveAreas, "classification baseline requires redaction")
+	}
+	sensitiveAreas = append(sensitiveAreas, highRiskCapabilities...)
+	promotionAdvice := "ready_for_governed_changes"
+	if !record.OperabilityReport.Operable {
+		promotionAdvice = "fix_failed_checks_before_promoting_changes"
+	} else if len(requiresApprovalAreas) > 0 {
+		promotionAdvice = "use_preview_and_explicit_approval_for_sensitive_changes"
+	}
+	recommendedNext := []string{"review catalog projection", "review connector projection", "review governance baselines"}
+	if !record.OperabilityReport.Operable {
+		recommendedNext = append(recommendedNext, "resolve failed operability checks")
+	}
+	return tenantAdminWorkspace{
+		TenantID:   record.TenantID,
+		TenantName: record.TenantName,
+		State:      record.State,
+		Summary: tenantSummaryCard{
+			Operable:        record.OperabilityReport.Operable,
+			FailedChecks:    failedChecks,
+			RecommendedNext: recommendedNext,
+			Summary:         fmt.Sprintf("tenant %s is %s with %d visible capabilities and %d connectors", record.TenantID, record.State, len(record.CatalogProjection), len(record.ConnectorProjection)),
+		},
+		Governance: tenantGovernanceCard{
+			PolicyProfile:         record.PolicyBaseline.ProfileRef,
+			ApprovalProfile:       record.ApprovalBaseline.ProfileRef,
+			ClassificationProfile: record.ClassificationBaseline.ProfileRef,
+			Guardrails: []string{
+				record.PolicyBaseline.DefaultAction,
+				record.ApprovalBaseline.DefaultMode,
+				record.ClassificationBaseline.RestrictedViewMode,
+			},
+			Summary: "tenant governance reflects baseline profiles and should remain governed through preview and approval",
+		},
+		Catalog: tenantCatalogCard{
+			VisibleCapabilities:    len(record.CatalogProjection),
+			ApprovalSensitive:      approvalSensitive,
+			RestrictedCapabilities: restrictedCapabilities,
+			HighRiskCapabilities:   highRiskCapabilities,
+			Summary:                fmt.Sprintf("catalog exposes %d capabilities, %d of them approval-sensitive", len(record.CatalogProjection), approvalSensitive),
+		},
+		Connectors: tenantConnectorCard{
+			EnabledConnectors:    len(record.ConnectorProjection),
+			RestrictedConnectors: restrictedConnectors,
+			ExecutionConnectors:  executionConnectors,
+			Summary:              fmt.Sprintf("tenant has %d enabled connectors, %d in execution scope", len(record.ConnectorProjection), len(executionConnectors)),
+		},
+		Impact: tenantImpactCard{
+			RequiresApprovalAreas: requiresApprovalAreas,
+			SensitiveAreas:        sensitiveAreas,
+			PromotionAdvice:       promotionAdvice,
+		},
+		Boundary: "tenant_admin_surface_reads_bootstrap_state_and_guides_governed_changes",
+	}
 }
 
 func (h *Handler) appendEvent(record events.Record) {

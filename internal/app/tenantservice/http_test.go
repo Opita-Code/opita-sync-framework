@@ -175,3 +175,47 @@ func TestBootstrapTenantBlockedWhenCatalogOrConnectorUnsupported(t *testing.T) {
 		t.Fatalf("expected 202, got %d body=%s", w.Code, w.Body.String())
 	}
 }
+
+func TestTenantAdminWorkspaceReturnsConcreteSummary(t *testing.T) {
+	store := memory.NewTenantStore()
+	events := memory.NewEventLog()
+	h := tenantservice.NewHandler(store, events)
+	body, _ := json.Marshal(map[string]any{
+		"tenant_id":                  "tenant-7",
+		"tenant_name":                "Tenant Siete",
+		"admin_subject_id":           "admin-7",
+		"initial_catalog_refs":       []string{"tenant.execution.compile_governed_intent", "tenant.execution.inspect_run"},
+		"initial_connector_refs":     []string{"connector.execution.restricted"},
+		"policy_profile_ref":         "policy.restrictive-v1",
+		"approval_profile_ref":       "approval.strict-v1",
+		"classification_profile_ref": "classification.internal-first",
+		"context_seed":               map[string]any{"company": "ACME"},
+	})
+	postReq := httptest.NewRequest(http.MethodPost, "/v1/tenants/bootstrap", bytes.NewReader(body))
+	postW := httptest.NewRecorder()
+	h.Routes().ServeHTTP(postW, postReq)
+	if postW.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", postW.Code, postW.Body.String())
+	}
+	wsReq := httptest.NewRequest(http.MethodGet, "/v1/tenant-admin/workspace/tenant-7", nil)
+	wsW := httptest.NewRecorder()
+	h.Routes().ServeHTTP(wsW, wsReq)
+	if wsW.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", wsW.Code, wsW.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(wsW.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp["boundary"] != "tenant_admin_surface_reads_bootstrap_state_and_guides_governed_changes" {
+		t.Fatalf("unexpected boundary: %#v", resp["boundary"])
+	}
+	impact := resp["impact"].(map[string]any)
+	if impact["promotion_advice"] == "" {
+		t.Fatalf("expected promotion advice")
+	}
+	catalog := resp["catalog"].(map[string]any)
+	if catalog["visible_capabilities"].(float64) < 1 {
+		t.Fatalf("expected visible capabilities, got %#v", catalog)
+	}
+}
