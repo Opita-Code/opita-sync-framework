@@ -171,4 +171,8 @@ func TestPilotScorecardCapturesAccessDomainMetrics(t *testing.T) {
 	if operability["end_to_end_reconstructable"].(float64) < 1 {
 		t.Fatalf("expected reconstructable access scenarios, got %#v", operability)
 	}
+	timing := resp["timing"].(map[string]any)
+	if timing["intention_to_proposal_seconds"].(float64) == 0 || timing["approval_to_execution_seconds"].(float64) == 0 {
+		t.Fatalf("expected non-zero access timing metrics, got %#v", timing)
+	}
 }

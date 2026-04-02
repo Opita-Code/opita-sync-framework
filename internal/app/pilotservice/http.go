@@ -266,6 +266,7 @@ func buildScorecard(records []events.Record, tenantID string) pilotScorecard {
 			scorecard.Operability.CasesWithFullEvidenceTrail++
 			scorecard.Operability.EndToEndReconstructable++
 		}
+		timing.consumeAccess(traceRecords)
 	}
 	scorecard.Timing = timing.average()
 	return scorecard
@@ -303,6 +304,33 @@ func (a *timingAccumulator) consume(records []events.Record) {
 	}
 	if start, end := find("recovery.candidate_created"), firstOf(records, "execution.released", "execution.unknown_outcome", "compensation.requested"); start != nil && end != nil && end.RecoveryActionID != "" {
 		a.incidentToRecoveryDecision = append(a.incidentToRecoveryDecision, end.OccurredAt.Sub(start.OccurredAt).Seconds())
+	}
+}
+
+func (a *timingAccumulator) consumeAccess(records []events.Record) {
+	sort.Slice(records, func(i, j int) bool { return records[i].OccurredAt.Before(records[j].OccurredAt) })
+	find := func(eventType string) *events.Record {
+		for i := range records {
+			if records[i].EventType == eventType {
+				return &records[i]
+			}
+		}
+		return nil
+	}
+	if start, end := firstOf(records, "tenant_access.grant_created", "tenant_access.delegation_created"), firstOf(records, "tenant_access.grant_awaiting_approval", "tenant_access.delegation_awaiting_approval"); start != nil && end != nil {
+		a.previewToApproval = append(a.previewToApproval, end.OccurredAt.Sub(start.OccurredAt).Seconds())
+	}
+	if start, end := firstOf(records, "tenant_access.grant_awaiting_approval", "tenant_access.delegation_awaiting_approval"), firstOf(records, "tenant_access.grant_released", "tenant_access.delegation_released"); start != nil && end != nil {
+		a.approvalToExecution = append(a.approvalToExecution, end.OccurredAt.Sub(start.OccurredAt).Seconds())
+	}
+	if start, end := firstOf(records, "tenant_access.grant_created", "tenant_access.delegation_created"), firstOf(records, "tenant_access.grant_revoked", "tenant_access.delegation_revoked"); start != nil && end != nil {
+		a.incidentToRecoveryDecision = append(a.incidentToRecoveryDecision, end.OccurredAt.Sub(start.OccurredAt).Seconds())
+	}
+	if start, end := find("tenant_access.grant_created"), find("tenant_access.grant_released"); start != nil && end != nil {
+		a.intentionToProposal = append(a.intentionToProposal, end.OccurredAt.Sub(start.OccurredAt).Seconds())
+	}
+	if start, end := find("tenant_access.delegation_created"), find("tenant_access.delegation_released"); start != nil && end != nil {
+		a.intentionToProposal = append(a.intentionToProposal, end.OccurredAt.Sub(start.OccurredAt).Seconds())
 	}
 }
 
