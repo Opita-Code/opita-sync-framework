@@ -154,3 +154,72 @@ func TestAccessWorkspaceReturnsUsableSummary(t *testing.T) {
 		t.Fatalf("expected blocked grant summary, got %#v", grants)
 	}
 }
+
+func TestApproveGrantFailsWhenAlreadyActive(t *testing.T) {
+	store := memory.NewAccessStore()
+	events := memory.NewEventLog()
+	approvals := memory.NewApprovalStore()
+	h := accessservice.NewHandler(store, events, approvals)
+	body, _ := json.Marshal(map[string]any{"tenant_id": "tenant-1", "principal_ref": "user://alice", "principal_type": "person", "capability_id": "tenant.execution.inspect_run", "allowed_actions": []string{"use"}, "trace_ref": "trace-grant-active"})
+	req := httptest.NewRequest(http.MethodPost, "/v1/tenant-access/grants", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	h.Routes().ServeHTTP(w, req)
+	var created map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &created)
+	grantID := created["grant_id"].(string)
+	approveBody, _ := json.Marshal(map[string]any{"decided_by_subject_id": "approver-1"})
+	approveReq := httptest.NewRequest(http.MethodPost, "/v1/tenant-access/grants/"+grantID+"/approve", bytes.NewReader(approveBody))
+	approveW := httptest.NewRecorder()
+	h.Routes().ServeHTTP(approveW, approveReq)
+	if approveW.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", approveW.Code, approveW.Body.String())
+	}
+}
+
+func TestRevokeGrantFailsWhenAlreadyRevoked(t *testing.T) {
+	store := memory.NewAccessStore()
+	events := memory.NewEventLog()
+	approvals := memory.NewApprovalStore()
+	h := accessservice.NewHandler(store, events, approvals)
+	body, _ := json.Marshal(map[string]any{"tenant_id": "tenant-1", "principal_ref": "user://alice", "principal_type": "person", "capability_id": "tenant.execution.inspect_run", "allowed_actions": []string{"use"}, "trace_ref": "trace-grant-revoke"})
+	req := httptest.NewRequest(http.MethodPost, "/v1/tenant-access/grants", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	h.Routes().ServeHTTP(w, req)
+	var created map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &created)
+	grantID := created["grant_id"].(string)
+	revokeBody, _ := json.Marshal(map[string]any{"revoked_by": "admin-1"})
+	revokeReq := httptest.NewRequest(http.MethodPost, "/v1/tenant-access/grants/"+grantID+"/revoke", bytes.NewReader(revokeBody))
+	revokeW := httptest.NewRecorder()
+	h.Routes().ServeHTTP(revokeW, revokeReq)
+	if revokeW.Code != http.StatusOK {
+		t.Fatalf("expected first revoke 200, got %d body=%s", revokeW.Code, revokeW.Body.String())
+	}
+	revokeAgainReq := httptest.NewRequest(http.MethodPost, "/v1/tenant-access/grants/"+grantID+"/revoke", bytes.NewReader(revokeBody))
+	revokeAgainW := httptest.NewRecorder()
+	h.Routes().ServeHTTP(revokeAgainW, revokeAgainReq)
+	if revokeAgainW.Code != http.StatusConflict {
+		t.Fatalf("expected second revoke 409, got %d body=%s", revokeAgainW.Code, revokeAgainW.Body.String())
+	}
+}
+
+func TestApproveDelegationFailsWhenAlreadyActive(t *testing.T) {
+	store := memory.NewAccessStore()
+	events := memory.NewEventLog()
+	approvals := memory.NewApprovalStore()
+	h := accessservice.NewHandler(store, events, approvals)
+	body, _ := json.Marshal(map[string]any{"tenant_id": "tenant-1", "source_principal": "role://tenant-admin", "target_principal": "user://bob", "authority_source": "tenant-admin", "scope_type": "capability", "scope_ref": "tenant.execution.inspect_run", "allowed_actions": []string{"use"}, "can_redelegate": false, "max_depth": 1, "trace_ref": "trace-delegation-active"})
+	req := httptest.NewRequest(http.MethodPost, "/v1/tenant-access/delegations", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	h.Routes().ServeHTTP(w, req)
+	var created map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &created)
+	grantID := created["grant_id"].(string)
+	approveBody, _ := json.Marshal(map[string]any{"decided_by_subject_id": "approver-1"})
+	approveReq := httptest.NewRequest(http.MethodPost, "/v1/tenant-access/delegations/"+grantID+"/approve", bytes.NewReader(approveBody))
+	approveW := httptest.NewRecorder()
+	h.Routes().ServeHTTP(approveW, approveReq)
+	if approveW.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", approveW.Code, approveW.Body.String())
+	}
+}

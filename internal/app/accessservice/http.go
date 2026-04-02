@@ -317,6 +317,10 @@ func (h *Handler) handleApproveGrant(w http.ResponseWriter, r *http.Request, gra
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.invalid_json", "message": err.Error()})
 		return
 	}
+	if grant.State != access.StateBlocked {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "grant.invalid_state_for_approve", "state": grant.State})
+		return
+	}
 	if h.Approvals == nil || grant.ApprovalRequestID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.approval_not_available"})
 		return
@@ -340,6 +344,10 @@ func (h *Handler) handleApproveDelegation(w http.ResponseWriter, r *http.Request
 	var req approvalActionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.invalid_json", "message": err.Error()})
+		return
+	}
+	if grant.State != access.StateBlocked {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "delegation.invalid_state_for_approve", "state": grant.State})
 		return
 	}
 	if h.Approvals == nil || grant.ApprovalRequestID == "" {
@@ -371,6 +379,10 @@ func (h *Handler) handleRevokeGrant(w http.ResponseWriter, r *http.Request, gran
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.missing_revoked_by"})
 		return
 	}
+	if grant.State == access.StateRevoked {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "grant.already_revoked", "state": grant.State})
+		return
+	}
 	now := time.Now().UTC()
 	grant.State = access.StateRevoked
 	grant.RevokedBy = strings.TrimSpace(req.RevokedBy)
@@ -395,6 +407,10 @@ func (h *Handler) handleRevokeDelegation(w http.ResponseWriter, r *http.Request,
 	}
 	if strings.TrimSpace(req.RevokedBy) == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.missing_revoked_by"})
+		return
+	}
+	if grant.State == access.StateRevoked {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "delegation.already_revoked", "state": grant.State})
 		return
 	}
 	now := time.Now().UTC()
