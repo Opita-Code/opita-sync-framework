@@ -60,6 +60,8 @@ type accessGrantCard struct {
 	ActiveGrants          int      `json:"active_grants"`
 	BlockedGrants         int      `json:"blocked_grants"`
 	ApprovalRequired      int      `json:"approval_required_grants"`
+	BlockedGrantIDs       []string `json:"blocked_grant_ids"`
+	RevokedGrantIDs       []string `json:"revoked_grant_ids"`
 	SensitiveCapabilities []string `json:"sensitive_capabilities"`
 	Summary               string   `json:"summary"`
 }
@@ -68,6 +70,8 @@ type accessDelegationCard struct {
 	ActiveDelegations      int      `json:"active_delegations"`
 	BlockedDelegations     int      `json:"blocked_delegations"`
 	RedelegableDelegations int      `json:"redelegable_delegations"`
+	BlockedDelegationIDs   []string `json:"blocked_delegation_ids"`
+	RevokedDelegationIDs   []string `json:"revoked_delegation_ids"`
 	SensitiveDelegations   []string `json:"sensitive_delegations"`
 	Summary                string   `json:"summary"`
 }
@@ -442,10 +446,14 @@ func buildAccessAdminWorkspace(tenantID string, grants []access.CapabilityGrant,
 	revokedItems := 0
 	activeGrants := 0
 	blockedGrants := 0
+	blockedGrantIDs := make([]string, 0)
+	revokedGrantIDs := make([]string, 0)
 	approvalRequiredGrants := 0
 	sensitiveCapabilities := make([]string, 0)
 	activeDelegations := 0
 	blockedDelegations := 0
+	blockedDelegationIDs := make([]string, 0)
+	revokedDelegationIDs := make([]string, 0)
 	redelegableDelegations := 0
 	sensitiveDelegations := make([]string, 0)
 	approvalRequests := 0
@@ -457,9 +465,11 @@ func buildAccessAdminWorkspace(tenantID string, grants []access.CapabilityGrant,
 		case access.StateBlocked:
 			blockedGrants++
 			blockedItems++
+			blockedGrantIDs = append(blockedGrantIDs, grant.GrantID)
 		case access.StateRevoked:
 			revokedItems++
 			revocations++
+			revokedGrantIDs = append(revokedGrantIDs, grant.GrantID)
 		}
 		if grant.RequiresApproval {
 			approvalRequiredGrants++
@@ -478,9 +488,11 @@ func buildAccessAdminWorkspace(tenantID string, grants []access.CapabilityGrant,
 		case access.StateBlocked:
 			blockedDelegations++
 			blockedItems++
+			blockedDelegationIDs = append(blockedDelegationIDs, grant.GrantID)
 		case access.StateRevoked:
 			revokedItems++
 			revocations++
+			revokedDelegationIDs = append(revokedDelegationIDs, grant.GrantID)
 		}
 		if grant.ApprovalRequestID != "" {
 			approvalRequests++
@@ -511,6 +523,8 @@ func buildAccessAdminWorkspace(tenantID string, grants []access.CapabilityGrant,
 			ActiveGrants:          activeGrants,
 			BlockedGrants:         blockedGrants,
 			ApprovalRequired:      approvalRequiredGrants,
+			BlockedGrantIDs:       blockedGrantIDs,
+			RevokedGrantIDs:       revokedGrantIDs,
 			SensitiveCapabilities: uniqueStrings(sensitiveCapabilities),
 			Summary:               fmt.Sprintf("%d grants active, %d blocked", activeGrants, blockedGrants),
 		},
@@ -518,6 +532,8 @@ func buildAccessAdminWorkspace(tenantID string, grants []access.CapabilityGrant,
 			ActiveDelegations:      activeDelegations,
 			BlockedDelegations:     blockedDelegations,
 			RedelegableDelegations: redelegableDelegations,
+			BlockedDelegationIDs:   blockedDelegationIDs,
+			RevokedDelegationIDs:   revokedDelegationIDs,
 			SensitiveDelegations:   uniqueStrings(sensitiveDelegations),
 			Summary:                fmt.Sprintf("%d delegations active, %d blocked", activeDelegations, blockedDelegations),
 		},

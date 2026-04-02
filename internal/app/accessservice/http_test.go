@@ -153,6 +153,9 @@ func TestAccessWorkspaceReturnsUsableSummary(t *testing.T) {
 	if grants["blocked_grants"].(float64) < 1 {
 		t.Fatalf("expected blocked grant summary, got %#v", grants)
 	}
+	if len(grants["blocked_grant_ids"].([]any)) < 1 {
+		t.Fatalf("expected blocked grant ids, got %#v", grants)
+	}
 }
 
 func TestApproveGrantFailsWhenAlreadyActive(t *testing.T) {
@@ -200,6 +203,50 @@ func TestRevokeGrantFailsWhenAlreadyRevoked(t *testing.T) {
 	h.Routes().ServeHTTP(revokeAgainW, revokeAgainReq)
 	if revokeAgainW.Code != http.StatusConflict {
 		t.Fatalf("expected second revoke 409, got %d body=%s", revokeAgainW.Code, revokeAgainW.Body.String())
+	}
+}
+
+func TestWorkspaceShowsRevokedGrantAndDelegationIDs(t *testing.T) {
+	store := memory.NewAccessStore()
+	events := memory.NewEventLog()
+	approvals := memory.NewApprovalStore()
+	h := accessservice.NewHandler(store, events, approvals)
+	grantBody, _ := json.Marshal(map[string]any{"tenant_id": "tenant-1", "principal_ref": "user://alice", "principal_type": "person", "capability_id": "tenant.execution.inspect_run", "allowed_actions": []string{"use"}, "trace_ref": "trace-grant-revoked-view"})
+	grantReq := httptest.NewRequest(http.MethodPost, "/v1/tenant-access/grants", bytes.NewReader(grantBody))
+	grantW := httptest.NewRecorder()
+	h.Routes().ServeHTTP(grantW, grantReq)
+	var createdGrant map[string]any
+	_ = json.Unmarshal(grantW.Body.Bytes(), &createdGrant)
+	grantID := createdGrant["grant_id"].(string)
+	revokeBody, _ := json.Marshal(map[string]any{"revoked_by": "admin-1"})
+	revokeReq := httptest.NewRequest(http.MethodPost, "/v1/tenant-access/grants/"+grantID+"/revoke", bytes.NewReader(revokeBody))
+	revokeW := httptest.NewRecorder()
+	h.Routes().ServeHTTP(revokeW, revokeReq)
+
+	delBody, _ := json.Marshal(map[string]any{"tenant_id": "tenant-1", "source_principal": "role://tenant-admin", "target_principal": "user://bob", "authority_source": "tenant-admin", "scope_type": "capability", "scope_ref": "tenant.recovery.request_manual_compensation", "allowed_actions": []string{"use"}, "can_redelegate": true, "max_depth": 2, "trace_ref": "trace-delegation-revoked-view"})
+	delReq := httptest.NewRequest(http.MethodPost, "/v1/tenant-access/delegations", bytes.NewReader(delBody))
+	delW := httptest.NewRecorder()
+	h.Routes().ServeHTTP(delW, delReq)
+	var createdDel map[string]any
+	_ = json.Unmarshal(delW.Body.Bytes(), &createdDel)
+	delID := createdDel["grant_id"].(string)
+	approveBody, _ := json.Marshal(map[string]any{"decided_by_subject_id": "approver-1"})
+	approveReq := httptest.NewRequest(http.MethodPost, "/v1/tenant-access/delegations/"+delID+"/approve", bytes.NewReader(approveBody))
+	approveW := httptest.NewRecorder()
+	h.Routes().ServeHTTP(approveW, approveReq)
+	delRevokeReq := httptest.NewRequest(http.MethodPost, "/v1/tenant-access/delegations/"+delID+"/revoke", bytes.NewReader(revokeBody))
+	delRevokeW := httptest.NewRecorder()
+	h.Routes().ServeHTTP(delRevokeW, delRevokeReq)
+
+	wsReq := httptest.NewRequest(http.MethodGet, "/v1/tenant-access/workspace/tenant-1", nil)
+	wsW := httptest.NewRecorder()
+	h.Routes().ServeHTTP(wsW, wsReq)
+	var resp map[string]any
+	_ = json.Unmarshal(wsW.Body.Bytes(), &resp)
+	grants := resp["grants"].(map[string]any)
+	delegations := resp["delegations"].(map[string]any)
+	if len(grants["revoked_grant_ids"].([]any)) < 1 || len(delegations["revoked_delegation_ids"].([]any)) < 1 {
+		t.Fatalf("expected revoked ids in workspace, got grants=%#v delegations=%#v", grants, delegations)
 	}
 }
 
