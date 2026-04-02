@@ -103,6 +103,7 @@ func TestPilotIncidentCandidatesDeriveFromCanonicalEvents(t *testing.T) {
 	eventLog := memory.NewEventLog()
 	base := time.Date(2026, 3, 30, 12, 0, 0, 0, time.UTC)
 	records := []events.Record{
+		{EventID: "0", EventType: "tenant_access.grant_awaiting_approval", TenantID: "tenant-alpha-ops", TraceID: "trace-alpha-01", ApprovalRequestID: "approval-0", OccurredAt: base.Add(-5 * time.Second)},
 		{EventID: "1", EventType: "preview.simulation_recorded", TenantID: "tenant-alpha-ops", TraceID: "trace-alpha-01", ExecutionID: "exec-1", OccurredAt: base, Payload: map[string]any{"status": "preview_warning"}},
 		{EventID: "2", EventType: "recovery.execution_blocked", TenantID: "tenant-alpha-ops", TraceID: "trace-alpha-01", ExecutionID: "exec-1", RecoveryActionID: "recovery-1", OccurredAt: base.Add(10 * time.Second), Payload: map[string]any{"reason_codes": []string{"recovery.invalid_runtime_state.resume_after_approval"}}},
 		{EventID: "3", EventType: "approval.fingerprint_mismatch", TenantID: "tenant-alpha-ops", TraceID: "trace-alpha-01", ExecutionID: "exec-1", ApprovalRequestID: "approval-1", OccurredAt: base.Add(20 * time.Second)},
@@ -124,8 +125,8 @@ func TestPilotIncidentCandidatesDeriveFromCanonicalEvents(t *testing.T) {
 		t.Fatalf("unmarshal response: %v", err)
 	}
 	candidates := resp["candidates"].([]any)
-	if len(candidates) != 3 {
-		t.Fatalf("expected 3 incident candidates, got %d", len(candidates))
+	if len(candidates) != 4 {
+		t.Fatalf("expected 4 incident candidates, got %d", len(candidates))
 	}
 }
 

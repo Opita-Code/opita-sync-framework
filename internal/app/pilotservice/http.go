@@ -425,6 +425,18 @@ func buildIncidentCandidate(record events.Record) (incidentCandidate, bool) {
 		candidate.Summary = "approved fingerprint no longer matches the current execution contract"
 		candidate.ReasonCodes = []string{"approval.fingerprint_mismatch"}
 		return candidate, true
+	case "tenant_access.grant_awaiting_approval":
+		candidate.Severity = "medium"
+		candidate.Category = "access_awaiting_approval"
+		candidate.Summary = "sensitive capability grant is waiting for explicit approval"
+		candidate.ReasonCodes = []string{"grant.requires_approval"}
+		return candidate, true
+	case "tenant_access.delegation_awaiting_approval":
+		candidate.Severity = "medium"
+		candidate.Category = "access_awaiting_approval"
+		candidate.Summary = "sensitive delegation is waiting for explicit approval"
+		candidate.ReasonCodes = []string{"delegation.requires_approval"}
+		return candidate, true
 	case "recovery.execution_blocked":
 		candidate.Severity = "high"
 		candidate.Category = "recovery_blocked"
