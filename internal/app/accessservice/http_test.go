@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"opita-sync-framework/internal/app/accessservice"
+	"opita-sync-framework/internal/engine/access"
 	"opita-sync-framework/internal/platform/memory"
 )
 
@@ -272,6 +274,39 @@ func TestAccessWorkspaceUsesConcreteGuidanceForBlockedItems(t *testing.T) {
 	next := summary["recommended_next_actions"].([]any)
 	if len(next) == 0 || next[0] != "resolve blocked grants or delegations" {
 		t.Fatalf("expected more concrete next actions, got %#v", next)
+	}
+}
+
+func TestCreateGrantRejectsPastValidUntil(t *testing.T) {
+	store := memory.NewAccessStore()
+	events := memory.NewEventLog()
+	approvals := memory.NewApprovalStore()
+	h := accessservice.NewHandler(store, events, approvals)
+	body, _ := json.Marshal(map[string]any{"tenant_id": "tenant-1", "principal_ref": "user://alice", "principal_type": "person", "capability_id": "tenant.execution.inspect_run", "allowed_actions": []string{"use"}, "trace_ref": "trace-grant-past", "valid_until": "2020-01-01T00:00:00Z"})
+	req := httptest.NewRequest(http.MethodPost, "/v1/tenant-access/grants", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	h.Routes().ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestWorkspaceShowsExpiredGrantIDs(t *testing.T) {
+	store := memory.NewAccessStore()
+	events := memory.NewEventLog()
+	approvals := memory.NewApprovalStore()
+	h := accessservice.NewHandler(store, events, approvals)
+	now := time.Now().UTC().Add(-2 * time.Hour)
+	_ = store.SaveGrant(access.CapabilityGrant{GrantID: "grant-expired-1", TenantID: "tenant-1", PrincipalRef: "user://alice", PrincipalType: "person", CapabilityID: "tenant.execution.inspect_run", AllowedActions: []string{"use"}, TraceRef: "trace-grant-expired", State: access.StateActive, ValidFrom: now, ValidUntil: now.Add(30 * time.Minute), CreatedAt: now, UpdatedAt: now})
+	wsReq := httptest.NewRequest(http.MethodGet, "/v1/tenant-access/workspace/tenant-1", nil)
+	wsW := httptest.NewRecorder()
+	h.Routes().ServeHTTP(wsW, wsReq)
+	var resp map[string]any
+	_ = json.Unmarshal(wsW.Body.Bytes(), &resp)
+	summary := resp["summary"].(map[string]any)
+	grants := resp["grants"].(map[string]any)
+	if summary["expired_items"].(float64) < 1 || len(grants["expired_grant_ids"].([]any)) < 1 {
+		t.Fatalf("expected expired grant visibility, got summary=%#v grants=%#v", summary, grants)
 	}
 }
 

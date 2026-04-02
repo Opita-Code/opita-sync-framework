@@ -52,6 +52,7 @@ type accessSummaryCard struct {
 	TotalDelegations int      `json:"total_delegations"`
 	BlockedItems     int      `json:"blocked_items"`
 	RevokedItems     int      `json:"revoked_items"`
+	ExpiredItems     int      `json:"expired_items"`
 	RecommendedNext  []string `json:"recommended_next_actions"`
 	Summary          string   `json:"summary"`
 }
@@ -62,6 +63,7 @@ type accessGrantCard struct {
 	ApprovalRequired      int      `json:"approval_required_grants"`
 	BlockedGrantIDs       []string `json:"blocked_grant_ids"`
 	RevokedGrantIDs       []string `json:"revoked_grant_ids"`
+	ExpiredGrantIDs       []string `json:"expired_grant_ids"`
 	SensitiveCapabilities []string `json:"sensitive_capabilities"`
 	Summary               string   `json:"summary"`
 }
@@ -72,6 +74,7 @@ type accessDelegationCard struct {
 	RedelegableDelegations int      `json:"redelegable_delegations"`
 	BlockedDelegationIDs   []string `json:"blocked_delegation_ids"`
 	RevokedDelegationIDs   []string `json:"revoked_delegation_ids"`
+	ExpiredDelegationIDs   []string `json:"expired_delegation_ids"`
 	SensitiveDelegations   []string `json:"sensitive_delegations"`
 	Summary                string   `json:"summary"`
 }
@@ -99,6 +102,7 @@ type createGrantRequest struct {
 	DeniedActions  []string `json:"denied_actions,omitempty"`
 	Justification  string   `json:"justification,omitempty"`
 	TraceRef       string   `json:"trace_ref"`
+	ValidUntil     string   `json:"valid_until,omitempty"`
 }
 
 type createDelegationRequest struct {
@@ -114,6 +118,7 @@ type createDelegationRequest struct {
 	MaxDepth        int      `json:"max_depth"`
 	Justification   string   `json:"justification,omitempty"`
 	TraceRef        string   `json:"trace_ref"`
+	ValidUntil      string   `json:"valid_until,omitempty"`
 }
 
 type approvalActionRequest struct {
@@ -154,13 +159,22 @@ func (h *Handler) handleCreateGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().UTC()
+	validUntil, err := parseOptionalRFC3339(req.ValidUntil)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.invalid_valid_until", "message": err.Error()})
+		return
+	}
+	if !validUntil.IsZero() && validUntil.Before(now) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.valid_until_in_past"})
+		return
+	}
 	requiresApproval := strings.Contains(req.CapabilityID, "approval") || strings.Contains(req.CapabilityID, "recovery") || strings.Contains(req.CapabilityID, "restricted")
 	state := access.StateActive
 	if requiresApproval {
 		state = access.StateBlocked
 	}
 	grant := access.CapabilityGrant{
-		GrantID: fmt.Sprintf("grant-%d", now.UnixNano()), TenantID: strings.TrimSpace(req.TenantID), PrincipalRef: strings.TrimSpace(req.PrincipalRef), PrincipalType: strings.TrimSpace(req.PrincipalType), CapabilityID: strings.TrimSpace(req.CapabilityID), ScopeRef: strings.TrimSpace(req.ScopeRef), AllowedActions: cleanStrings(req.AllowedActions), DeniedActions: cleanStrings(req.DeniedActions), RequiresApproval: requiresApproval, Justification: strings.TrimSpace(req.Justification), TraceRef: strings.TrimSpace(req.TraceRef), State: state, ValidFrom: now, CreatedAt: now, UpdatedAt: now,
+		GrantID: fmt.Sprintf("grant-%d", now.UnixNano()), TenantID: strings.TrimSpace(req.TenantID), PrincipalRef: strings.TrimSpace(req.PrincipalRef), PrincipalType: strings.TrimSpace(req.PrincipalType), CapabilityID: strings.TrimSpace(req.CapabilityID), ScopeRef: strings.TrimSpace(req.ScopeRef), AllowedActions: cleanStrings(req.AllowedActions), DeniedActions: cleanStrings(req.DeniedActions), RequiresApproval: requiresApproval, Justification: strings.TrimSpace(req.Justification), TraceRef: strings.TrimSpace(req.TraceRef), State: state, ValidFrom: now, ValidUntil: validUntil, CreatedAt: now, UpdatedAt: now,
 	}
 	if requiresApproval && h.Approvals != nil {
 		approval := approvals.Request{ApprovalRequestID: fmt.Sprintf("approval-access-grant-%d", now.UnixNano()), ExecutionID: grant.GrantID, ContractID: grant.GrantID, TenantID: grant.TenantID, TraceID: grant.TraceRef, State: approvals.StateAwaitingApproval, Mode: "pre_execution", ReasonCodes: []string{"grant.requires_approval"}, CreatedAt: now, UpdatedAt: now}
@@ -206,13 +220,22 @@ func (h *Handler) handleCreateDelegation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	now := time.Now().UTC()
+	validUntil, err := parseOptionalRFC3339(req.ValidUntil)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.invalid_valid_until", "message": err.Error()})
+		return
+	}
+	if !validUntil.IsZero() && validUntil.Before(now) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.valid_until_in_past"})
+		return
+	}
 	requiresApproval := strings.Contains(req.ScopeRef, "approval") || strings.Contains(req.ScopeRef, "recovery") || req.MaxDepth > 1 || req.CanRedelegate
 	state := access.StateActive
 	if requiresApproval {
 		state = access.StateBlocked
 	}
 	grant := access.DelegationGrant{
-		GrantID: fmt.Sprintf("delegation-%d", now.UnixNano()), TenantID: strings.TrimSpace(req.TenantID), SourcePrincipal: strings.TrimSpace(req.SourcePrincipal), TargetPrincipal: strings.TrimSpace(req.TargetPrincipal), AuthoritySource: strings.TrimSpace(req.AuthoritySource), ScopeType: strings.TrimSpace(req.ScopeType), ScopeRef: strings.TrimSpace(req.ScopeRef), AllowedActions: cleanStrings(req.AllowedActions), DeniedActions: cleanStrings(req.DeniedActions), RequiresApproval: requiresApproval, CanRedelegate: req.CanRedelegate, MaxDepth: req.MaxDepth, Justification: strings.TrimSpace(req.Justification), TraceRef: strings.TrimSpace(req.TraceRef), State: state, ValidFrom: now, CreatedAt: now, UpdatedAt: now,
+		GrantID: fmt.Sprintf("delegation-%d", now.UnixNano()), TenantID: strings.TrimSpace(req.TenantID), SourcePrincipal: strings.TrimSpace(req.SourcePrincipal), TargetPrincipal: strings.TrimSpace(req.TargetPrincipal), AuthoritySource: strings.TrimSpace(req.AuthoritySource), ScopeType: strings.TrimSpace(req.ScopeType), ScopeRef: strings.TrimSpace(req.ScopeRef), AllowedActions: cleanStrings(req.AllowedActions), DeniedActions: cleanStrings(req.DeniedActions), RequiresApproval: requiresApproval, CanRedelegate: req.CanRedelegate, MaxDepth: req.MaxDepth, Justification: strings.TrimSpace(req.Justification), TraceRef: strings.TrimSpace(req.TraceRef), State: state, ValidFrom: now, ValidUntil: validUntil, CreatedAt: now, UpdatedAt: now,
 	}
 	if requiresApproval && h.Approvals != nil {
 		approval := approvals.Request{ApprovalRequestID: fmt.Sprintf("approval-access-delegation-%d", now.UnixNano()), ExecutionID: grant.GrantID, ContractID: grant.GrantID, TenantID: grant.TenantID, TraceID: grant.TraceRef, State: approvals.StateAwaitingApproval, Mode: "pre_execution", ReasonCodes: []string{"delegation.requires_approval"}, CreatedAt: now, UpdatedAt: now}
@@ -444,20 +467,24 @@ func splitActionPath(path string) (string, string) {
 func buildAccessAdminWorkspace(tenantID string, grants []access.CapabilityGrant, delegations []access.DelegationGrant) accessAdminWorkspace {
 	blockedItems := 0
 	revokedItems := 0
+	expiredItems := 0
 	activeGrants := 0
 	blockedGrants := 0
 	blockedGrantIDs := make([]string, 0)
 	revokedGrantIDs := make([]string, 0)
+	expiredGrantIDs := make([]string, 0)
 	approvalRequiredGrants := 0
 	sensitiveCapabilities := make([]string, 0)
 	activeDelegations := 0
 	blockedDelegations := 0
 	blockedDelegationIDs := make([]string, 0)
 	revokedDelegationIDs := make([]string, 0)
+	expiredDelegationIDs := make([]string, 0)
 	redelegableDelegations := 0
 	sensitiveDelegations := make([]string, 0)
 	approvalRequests := 0
 	revocations := 0
+	now := time.Now().UTC()
 	for _, grant := range grants {
 		switch grant.State {
 		case access.StateActive:
@@ -476,6 +503,10 @@ func buildAccessAdminWorkspace(tenantID string, grants []access.CapabilityGrant,
 		}
 		if grant.ApprovalRequestID != "" {
 			approvalRequests++
+		}
+		if !grant.ValidUntil.IsZero() && grant.ValidUntil.Before(now) {
+			expiredItems++
+			expiredGrantIDs = append(expiredGrantIDs, grant.GrantID)
 		}
 		if strings.Contains(grant.CapabilityID, "approval") || strings.Contains(grant.CapabilityID, "recovery") || strings.Contains(grant.CapabilityID, "restricted") {
 			sensitiveCapabilities = append(sensitiveCapabilities, grant.CapabilityID)
@@ -497,6 +528,10 @@ func buildAccessAdminWorkspace(tenantID string, grants []access.CapabilityGrant,
 		if grant.ApprovalRequestID != "" {
 			approvalRequests++
 		}
+		if !grant.ValidUntil.IsZero() && grant.ValidUntil.Before(now) {
+			expiredItems++
+			expiredDelegationIDs = append(expiredDelegationIDs, grant.GrantID)
+		}
 		if grant.CanRedelegate {
 			redelegableDelegations++
 		}
@@ -509,6 +544,9 @@ func buildAccessAdminWorkspace(tenantID string, grants []access.CapabilityGrant,
 	if blockedItems > 0 {
 		promotionAdvice = "resolve_blocked_grants_or_delegations_before_promoting_sensitive_changes"
 		recommendedNext = []string{"resolve blocked grants or delegations", "review pending approvals", "confirm sensitive access changes before promotion"}
+	} else if expiredItems > 0 {
+		promotionAdvice = "review_expired_grants_or_delegations_before_trusting_current_access_state"
+		recommendedNext = []string{"review expired grants or delegations", "confirm whether they should be revoked or renewed", "check sensitive access paths after expiration"}
 	} else if revocations > 0 {
 		promotionAdvice = "review_recent_revocations_before_promoting_new_access_changes"
 		recommendedNext = []string{"review recent revocations", "confirm remaining active access is still correct", "check sensitive delegation paths"}
@@ -516,9 +554,9 @@ func buildAccessAdminWorkspace(tenantID string, grants []access.CapabilityGrant,
 		promotionAdvice = "review_approval_sensitive_changes_before_promoting_broader_access"
 		recommendedNext = []string{"review approval-sensitive grants", "review delegation depth", "confirm no accidental authority escalation"}
 	}
-	summaryText := fmt.Sprintf("tenant %s currently has %d active grants, %d active delegations, %d blocked items and %d revoked items", tenantID, activeGrants, activeDelegations, blockedItems, revokedItems)
-	grantSummary := fmt.Sprintf("%d grants active, %d blocked, %d approval-sensitive", activeGrants, blockedGrants, approvalRequiredGrants)
-	delegationSummary := fmt.Sprintf("%d delegations active, %d blocked, %d redelegable", activeDelegations, blockedDelegations, redelegableDelegations)
+	summaryText := fmt.Sprintf("tenant %s currently has %d active grants, %d active delegations, %d blocked items, %d revoked items and %d expired items", tenantID, activeGrants, activeDelegations, blockedItems, revokedItems, expiredItems)
+	grantSummary := fmt.Sprintf("%d grants active, %d blocked, %d approval-sensitive, %d expired", activeGrants, blockedGrants, approvalRequiredGrants, len(expiredGrantIDs))
+	delegationSummary := fmt.Sprintf("%d delegations active, %d blocked, %d redelegable, %d expired", activeDelegations, blockedDelegations, redelegableDelegations, len(expiredDelegationIDs))
 	governanceSummary := fmt.Sprintf("%d approval requests and %d revocations shape the current access governance state", approvalRequests, revocations)
 	return accessAdminWorkspace{
 		TenantID: tenantID,
@@ -527,6 +565,7 @@ func buildAccessAdminWorkspace(tenantID string, grants []access.CapabilityGrant,
 			TotalDelegations: len(delegations),
 			BlockedItems:     blockedItems,
 			RevokedItems:     revokedItems,
+			ExpiredItems:     expiredItems,
 			RecommendedNext:  recommendedNext,
 			Summary:          summaryText,
 		},
@@ -536,6 +575,7 @@ func buildAccessAdminWorkspace(tenantID string, grants []access.CapabilityGrant,
 			ApprovalRequired:      approvalRequiredGrants,
 			BlockedGrantIDs:       blockedGrantIDs,
 			RevokedGrantIDs:       revokedGrantIDs,
+			ExpiredGrantIDs:       expiredGrantIDs,
 			SensitiveCapabilities: uniqueStrings(sensitiveCapabilities),
 			Summary:               grantSummary,
 		},
@@ -545,6 +585,7 @@ func buildAccessAdminWorkspace(tenantID string, grants []access.CapabilityGrant,
 			RedelegableDelegations: redelegableDelegations,
 			BlockedDelegationIDs:   blockedDelegationIDs,
 			RevokedDelegationIDs:   revokedDelegationIDs,
+			ExpiredDelegationIDs:   expiredDelegationIDs,
 			SensitiveDelegations:   uniqueStrings(sensitiveDelegations),
 			Summary:                delegationSummary,
 		},
@@ -577,6 +618,18 @@ func uniqueStrings(values []string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func parseOptionalRFC3339(value string) (time.Time, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return time.Time{}, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, trimmed)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return parsed.UTC(), nil
 }
 
 func cleanStrings(values []string) []string {
