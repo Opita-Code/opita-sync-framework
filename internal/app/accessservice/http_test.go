@@ -250,6 +250,31 @@ func TestWorkspaceShowsRevokedGrantAndDelegationIDs(t *testing.T) {
 	}
 }
 
+func TestAccessWorkspaceUsesConcreteGuidanceForBlockedItems(t *testing.T) {
+	store := memory.NewAccessStore()
+	events := memory.NewEventLog()
+	approvals := memory.NewApprovalStore()
+	h := accessservice.NewHandler(store, events, approvals)
+	body, _ := json.Marshal(map[string]any{"tenant_id": "tenant-1", "principal_ref": "user://alice", "principal_type": "person", "capability_id": "tenant.approval.release_blocked_execution", "allowed_actions": []string{"approve"}, "trace_ref": "trace-guidance-blocked"})
+	req := httptest.NewRequest(http.MethodPost, "/v1/tenant-access/grants", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	h.Routes().ServeHTTP(w, req)
+	wsReq := httptest.NewRequest(http.MethodGet, "/v1/tenant-access/workspace/tenant-1", nil)
+	wsW := httptest.NewRecorder()
+	h.Routes().ServeHTTP(wsW, wsReq)
+	var resp map[string]any
+	_ = json.Unmarshal(wsW.Body.Bytes(), &resp)
+	impact := resp["impact"].(map[string]any)
+	if impact["promotion_advice"] != "resolve_blocked_grants_or_delegations_before_promoting_sensitive_changes" {
+		t.Fatalf("unexpected promotion advice: %#v", impact["promotion_advice"])
+	}
+	summary := resp["summary"].(map[string]any)
+	next := summary["recommended_next_actions"].([]any)
+	if len(next) == 0 || next[0] != "resolve blocked grants or delegations" {
+		t.Fatalf("expected more concrete next actions, got %#v", next)
+	}
+}
+
 func TestApproveDelegationFailsWhenAlreadyActive(t *testing.T) {
 	store := memory.NewAccessStore()
 	events := memory.NewEventLog()

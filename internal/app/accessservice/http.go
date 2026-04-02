@@ -508,7 +508,18 @@ func buildAccessAdminWorkspace(tenantID string, grants []access.CapabilityGrant,
 	promotionAdvice := "ready_for_governed_access_changes"
 	if blockedItems > 0 {
 		promotionAdvice = "resolve_blocked_grants_or_delegations_before_promoting_sensitive_changes"
+		recommendedNext = []string{"resolve blocked grants or delegations", "review pending approvals", "confirm sensitive access changes before promotion"}
+	} else if revocations > 0 {
+		promotionAdvice = "review_recent_revocations_before_promoting_new_access_changes"
+		recommendedNext = []string{"review recent revocations", "confirm remaining active access is still correct", "check sensitive delegation paths"}
+	} else if approvalRequests > 0 {
+		promotionAdvice = "review_approval_sensitive_changes_before_promoting_broader_access"
+		recommendedNext = []string{"review approval-sensitive grants", "review delegation depth", "confirm no accidental authority escalation"}
 	}
+	summaryText := fmt.Sprintf("tenant %s currently has %d active grants, %d active delegations, %d blocked items and %d revoked items", tenantID, activeGrants, activeDelegations, blockedItems, revokedItems)
+	grantSummary := fmt.Sprintf("%d grants active, %d blocked, %d approval-sensitive", activeGrants, blockedGrants, approvalRequiredGrants)
+	delegationSummary := fmt.Sprintf("%d delegations active, %d blocked, %d redelegable", activeDelegations, blockedDelegations, redelegableDelegations)
+	governanceSummary := fmt.Sprintf("%d approval requests and %d revocations shape the current access governance state", approvalRequests, revocations)
 	return accessAdminWorkspace{
 		TenantID: tenantID,
 		Summary: accessSummaryCard{
@@ -517,7 +528,7 @@ func buildAccessAdminWorkspace(tenantID string, grants []access.CapabilityGrant,
 			BlockedItems:     blockedItems,
 			RevokedItems:     revokedItems,
 			RecommendedNext:  recommendedNext,
-			Summary:          fmt.Sprintf("tenant %s has %d grants and %d delegations", tenantID, len(grants), len(delegations)),
+			Summary:          summaryText,
 		},
 		Grants: accessGrantCard{
 			ActiveGrants:          activeGrants,
@@ -526,7 +537,7 @@ func buildAccessAdminWorkspace(tenantID string, grants []access.CapabilityGrant,
 			BlockedGrantIDs:       blockedGrantIDs,
 			RevokedGrantIDs:       revokedGrantIDs,
 			SensitiveCapabilities: uniqueStrings(sensitiveCapabilities),
-			Summary:               fmt.Sprintf("%d grants active, %d blocked", activeGrants, blockedGrants),
+			Summary:               grantSummary,
 		},
 		Delegations: accessDelegationCard{
 			ActiveDelegations:      activeDelegations,
@@ -535,13 +546,13 @@ func buildAccessAdminWorkspace(tenantID string, grants []access.CapabilityGrant,
 			BlockedDelegationIDs:   blockedDelegationIDs,
 			RevokedDelegationIDs:   revokedDelegationIDs,
 			SensitiveDelegations:   uniqueStrings(sensitiveDelegations),
-			Summary:                fmt.Sprintf("%d delegations active, %d blocked", activeDelegations, blockedDelegations),
+			Summary:                delegationSummary,
 		},
 		Governance: accessGovernanceCard{
 			ApprovalRequestCount: approvalRequests,
 			RevocationCount:      revocations,
 			Guardrails:           []string{"approval-sensitive access stays governed", "revocation remains explicit and auditable", "delegation does not bypass tenant policies"},
-			Summary:              "access governance remains constrained by approvals, revoke paths and delegation limits",
+			Summary:              governanceSummary,
 		},
 		Impact: accessImpactCard{
 			ApprovalSensitiveAreas:   []string{"restricted capabilities", "redelegable delegations", "high-sensitivity access changes"},
