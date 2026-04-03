@@ -1,0 +1,61 @@
+name: Feature request
+description: Proponer una mejora o nueva capacidad del framework
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Usá este template para mejoras del kernel/framework, tooling, docs o governance del repo.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Pre-flight
+      options:
+        - label: Busqué issues existentes y no encontré un duplicado claro
+          required: true
+        - label: Este issue describe un cambio concreto y no una pregunta abierta
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema
+      description: Qué duele hoy o qué falta
+      placeholder: El framework no tiene...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Solución propuesta
+      description: Qué debería existir o cambiar
+      placeholder: Agregar...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área afectada
+      options:
+        - Runtime / engine
+        - Policy / approvals
+        - Evidence / inspection / recovery
+        - HTTP surfaces
+        - Documentation
+        - Governance / GitHub
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Contexto adicional
+      description: Links, decisiones previas, restricciones o tradeoffs
+    validations:
+      required: false
