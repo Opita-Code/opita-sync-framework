@@ -1,6 +1,7 @@
 package surfaceservice
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"opita-sync-framework/internal/engine/events"
 	"opita-sync-framework/internal/engine/intake"
 	"opita-sync-framework/internal/engine/proposal"
+	"opita-sync-framework/internal/httputil"
 )
 
 type Handler struct {
@@ -59,7 +61,7 @@ type patchsetCard struct {
 }
 
 type EventWriter interface {
-	Append(record events.Record) error
+	Append(ctx context.Context, record events.Record) error
 }
 
 type createIntakeRequest struct {
@@ -119,7 +121,7 @@ func (h *Handler) Routes() http.Handler {
 func (h *Handler) handleCreateIntakeTurn(w http.ResponseWriter, r *http.Request) {
 	var req createIntakeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "intake.invalid_json", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "intake.invalid_json", "message": err.Error()})
 		return
 	}
 	now := time.Now().UTC()
@@ -175,16 +177,16 @@ func (h *Handler) handleCreateIntakeTurn(w http.ResponseWriter, r *http.Request)
 		ReadyForIntentInput:   readyForIntent,
 		ReadyForProposalDraft: readyForProposal,
 	}
-	if err := h.Intake.CreateTurn(turn); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "intake.turn_create_failed", "message": err.Error()})
+	if err := h.Intake.CreateTurn(r.Context(), turn); err != nil {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "intake.turn_create_failed", "message": err.Error()})
 		return
 	}
-	if err := h.Intake.CreateSession(session); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "intake.session_create_failed", "message": err.Error()})
+	if err := h.Intake.CreateSession(r.Context(), session); err != nil {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "intake.session_create_failed", "message": err.Error()})
 		return
 	}
-	if err := h.Intake.SaveIntentCandidate(candidate); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "intake.candidate_create_failed", "message": err.Error()})
+	if err := h.Intake.SaveIntentCandidate(r.Context(), candidate); err != nil {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "intake.candidate_create_failed", "message": err.Error()})
 		return
 	}
 	_ = h.appendEvent(events.Record{
@@ -203,41 +205,41 @@ func (h *Handler) handleCreateIntakeTurn(w http.ResponseWriter, r *http.Request)
 			"last_decision":        decision,
 		},
 	})
-	writeJSON(w, http.StatusCreated, map[string]any{"conversation_turn_id": turnID, "intake_session": session, "intent_candidate": candidate})
+	httputil.WriteJSON(w, http.StatusCreated, map[string]any{"conversation_turn_id": turnID, "intake_session": session, "intent_candidate": candidate})
 }
 
 func (h *Handler) handleGetIntakeSession(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/v1/intake/sessions/")
-	session, found, err := h.Intake.GetSession(id)
+	session, found, err := h.Intake.GetSession(r.Context(), id)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "intake.session_lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "intake.session_lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "intake.session_not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "intake.session_not_found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, session)
+	httputil.WriteJSON(w, http.StatusOK, session)
 }
 
 func (h *Handler) handleGetIntentCandidate(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/v1/intake/candidates/")
-	candidate, found, err := h.Intake.GetIntentCandidate(id)
+	candidate, found, err := h.Intake.GetIntentCandidate(r.Context(), id)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "intake.candidate_lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "intake.candidate_lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "intake.candidate_not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "intake.candidate_not_found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, candidate)
+	httputil.WriteJSON(w, http.StatusOK, candidate)
 }
 
 func (h *Handler) handleCreateProposal(w http.ResponseWriter, r *http.Request) {
 	var req createProposalRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "proposal.invalid_json", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "proposal.invalid_json", "message": err.Error()})
 		return
 	}
 	now := time.Now().UTC()
@@ -260,8 +262,8 @@ func (h *Handler) handleCreateProposal(w http.ResponseWriter, r *http.Request) {
 		MaterialDiffRef:  req.MaterialDiffRef,
 		CreatedAt:        now,
 	}
-	if err := h.Proposal.CreateDraft(draft); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "proposal.create_failed", "message": err.Error()})
+	if err := h.Proposal.CreateDraft(r.Context(), draft); err != nil {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "proposal.create_failed", "message": err.Error()})
 		return
 	}
 	_ = h.appendEvent(events.Record{
@@ -279,27 +281,27 @@ func (h *Handler) handleCreateProposal(w http.ResponseWriter, r *http.Request) {
 			"state":              draft.CurrentState,
 		},
 	})
-	writeJSON(w, http.StatusCreated, draft)
+	httputil.WriteJSON(w, http.StatusCreated, draft)
 }
 
 func (h *Handler) handleGetProposal(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/v1/proposals/")
-	draft, found, err := h.Proposal.GetDraft(id)
+	draft, found, err := h.Proposal.GetDraft(r.Context(), id)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "proposal.lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "proposal.lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "proposal.not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "proposal.not_found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, draft)
+	httputil.WriteJSON(w, http.StatusOK, draft)
 }
 
 func (h *Handler) handleCreatePatchset(w http.ResponseWriter, r *http.Request) {
 	var req createPatchsetRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "patchset.invalid_json", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "patchset.invalid_json", "message": err.Error()})
 		return
 	}
 	now := time.Now().UTC()
@@ -316,8 +318,8 @@ func (h *Handler) handleCreatePatchset(w http.ResponseWriter, r *http.Request) {
 		ReadyForApplyCandidate:         false,
 		CreatedAt:                      now,
 	}
-	if err := h.Proposal.SavePatchset(patchset); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "patchset.create_failed", "message": err.Error()})
+	if err := h.Proposal.SavePatchset(r.Context(), patchset); err != nil {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "patchset.create_failed", "message": err.Error()})
 		return
 	}
 	_ = h.appendEvent(events.Record{
@@ -333,14 +335,14 @@ func (h *Handler) handleCreatePatchset(w http.ResponseWriter, r *http.Request) {
 			"material_diff_hash":    patchset.MaterialDiffHash,
 		},
 	})
-	writeJSON(w, http.StatusCreated, patchset)
+	httputil.WriteJSON(w, http.StatusCreated, patchset)
 }
 
 func (h *Handler) appendEvent(record events.Record) error {
 	if h.Events == nil {
 		return nil
 	}
-	return h.Events.Append(record)
+	return h.Events.Append(context.Background(), record)
 }
 
 func firstOrEmpty(values []string) string {
@@ -352,16 +354,16 @@ func firstOrEmpty(values []string) string {
 
 func (h *Handler) handleGetPatchset(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/v1/patchsets/")
-	patchset, found, err := h.Proposal.GetPatchset(id)
+	patchset, found, err := h.Proposal.GetPatchset(r.Context(), id)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "patchset.lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "patchset.lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "patchset.not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "patchset.not_found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, patchset)
+	httputil.WriteJSON(w, http.StatusOK, patchset)
 }
 
 func (h *Handler) handleGetIntakeProposalWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -370,7 +372,7 @@ func (h *Handler) handleGetIntakeProposalWorkspace(w http.ResponseWriter, r *htt
 	proposalDraftID := strings.TrimSpace(r.URL.Query().Get("proposal_draft_id"))
 	patchsetCandidateID := strings.TrimSpace(r.URL.Query().Get("patchset_candidate_id"))
 	if intakeSessionID == "" && intentCandidateID == "" && proposalDraftID == "" && patchsetCandidateID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "workspace.missing_refs", "message": "at least one artifact ref is required"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "workspace.missing_refs", "message": "at least one artifact ref is required"})
 		return
 	}
 
@@ -388,13 +390,13 @@ func (h *Handler) handleGetIntakeProposalWorkspace(w http.ResponseWriter, r *htt
 	var foundAny bool
 
 	if intakeSessionID != "" {
-		got, found, err := h.Intake.GetSession(intakeSessionID)
+		got, found, err := h.Intake.GetSession(r.Context(), intakeSessionID)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "workspace.intake_session_lookup_failed", "message": err.Error()})
+			httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "workspace.intake_session_lookup_failed", "message": err.Error()})
 			return
 		}
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]any{"error": "workspace.intake_session_not_found"})
+			httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "workspace.intake_session_not_found"})
 			return
 		}
 		session = got
@@ -413,13 +415,13 @@ func (h *Handler) handleGetIntakeProposalWorkspace(w http.ResponseWriter, r *htt
 	}
 
 	if intentCandidateID != "" {
-		got, found, err := h.Intake.GetIntentCandidate(intentCandidateID)
+		got, found, err := h.Intake.GetIntentCandidate(r.Context(), intentCandidateID)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "workspace.intent_candidate_lookup_failed", "message": err.Error()})
+			httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "workspace.intent_candidate_lookup_failed", "message": err.Error()})
 			return
 		}
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]any{"error": "workspace.intent_candidate_not_found"})
+			httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "workspace.intent_candidate_not_found"})
 			return
 		}
 		candidate = got
@@ -436,13 +438,13 @@ func (h *Handler) handleGetIntakeProposalWorkspace(w http.ResponseWriter, r *htt
 	}
 
 	if proposalDraftID != "" {
-		got, found, err := h.Proposal.GetDraft(proposalDraftID)
+		got, found, err := h.Proposal.GetDraft(r.Context(), proposalDraftID)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "workspace.proposal_lookup_failed", "message": err.Error()})
+			httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "workspace.proposal_lookup_failed", "message": err.Error()})
 			return
 		}
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]any{"error": "workspace.proposal_not_found"})
+			httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "workspace.proposal_not_found"})
 			return
 		}
 		draft = got
@@ -462,13 +464,13 @@ func (h *Handler) handleGetIntakeProposalWorkspace(w http.ResponseWriter, r *htt
 	}
 
 	if patchsetCandidateID != "" {
-		got, found, err := h.Proposal.GetPatchset(patchsetCandidateID)
+		got, found, err := h.Proposal.GetPatchset(r.Context(), patchsetCandidateID)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "workspace.patchset_lookup_failed", "message": err.Error()})
+			httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "workspace.patchset_lookup_failed", "message": err.Error()})
 			return
 		}
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]any{"error": "workspace.patchset_not_found"})
+			httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "workspace.patchset_not_found"})
 			return
 		}
 		patchset = got
@@ -490,12 +492,12 @@ func (h *Handler) handleGetIntakeProposalWorkspace(w http.ResponseWriter, r *htt
 	}
 
 	if !foundAny {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "workspace.not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "workspace.not_found"})
 		return
 	}
 
 	summary.NextGates = deriveNextGates(summary, session, candidate, draft, patchset)
-	writeJSON(w, http.StatusOK, summary)
+	httputil.WriteJSON(w, http.StatusOK, summary)
 }
 
 func summarizeIntake(session intake.Session) string {
@@ -528,10 +530,4 @@ func deriveNextGates(summary workspaceSummary, session intake.Session, candidate
 		next = append(next, "review_current_artifacts")
 	}
 	return next
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
 }

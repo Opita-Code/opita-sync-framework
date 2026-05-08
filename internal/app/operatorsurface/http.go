@@ -1,6 +1,7 @@
 package operatorsurface
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,25 +13,26 @@ import (
 	"opita-sync-framework/internal/engine/foundation"
 	"opita-sync-framework/internal/engine/inspection"
 	"opita-sync-framework/internal/engine/runtime"
+	"opita-sync-framework/internal/httputil"
 )
 
 type RuntimeReader interface {
-	GetExecution(executionID string) (runtime.ExecutionRecord, bool, error)
-	UpdateExecutionState(executionID string, state runtime.ExecutionState) (runtime.ExecutionRecord, error)
+	GetExecution(ctx context.Context, executionID string) (runtime.ExecutionRecord, bool, error)
+	UpdateExecutionState(ctx context.Context, executionID string, state runtime.ExecutionState) (runtime.ExecutionRecord, error)
 }
 
 type EventReader interface {
-	RecordsByExecution(executionID string) []events.Record
-	Append(record events.Record) error
+	RecordsByExecution(ctx context.Context, executionID string) []events.Record
+	Append(ctx context.Context, record events.Record) error
 }
 
 type RunReader interface {
-	GetByExecutionID(executionID string) (foundation.FoundationRunResult, bool, error)
+	GetByExecutionID(ctx context.Context, executionID string) (foundation.FoundationRunResult, bool, error)
 }
 
 type ApprovalReader interface {
-	GetByID(approvalRequestID string) (approvals.Request, bool, error)
-	Decide(approvalRequestID string, decision approvals.Decision) (approvals.Request, error)
+	GetByID(ctx context.Context, approvalRequestID string) (approvals.Request, bool, error)
+	Decide(ctx context.Context, approvalRequestID string, decision approvals.Decision) (approvals.Request, error)
 }
 
 type Handler struct {
@@ -115,19 +117,19 @@ func (h *Handler) Routes() http.Handler {
 func (h *Handler) handleInspectionView(w http.ResponseWriter, r *http.Request) {
 	executionID := strings.TrimPrefix(r.URL.Path, "/v1/inspection/executions/")
 	if executionID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "inspection.missing_execution_id"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "inspection.missing_execution_id"})
 		return
 	}
-	run, found, err := h.Runs.GetByExecutionID(executionID)
+	run, found, err := h.Runs.GetByExecutionID(r.Context(), executionID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "inspection.lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "inspection.lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "inspection.not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "inspection.not_found"})
 		return
 	}
-	records := h.Events.RecordsByExecution(executionID)
+	records := h.Events.RecordsByExecution(r.Context(), executionID)
 	eventRefs := make([]string, 0, len(records))
 	conversationTurnRefs := map[string]struct{}{}
 	intakeSessionRefs := map[string]struct{}{}
@@ -179,7 +181,7 @@ func (h *Handler) handleInspectionView(w http.ResponseWriter, r *http.Request) {
 		approvalRefs = append(approvalRefs, run.Approval.ApprovalRequestID)
 	}
 	view := h.buildInspectionView(run, records)
-	writeJSON(w, http.StatusOK, view)
+	httputil.WriteJSON(w, http.StatusOK, view)
 }
 
 func (h *Handler) handleOperatorExecutionWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -187,23 +189,23 @@ func (h *Handler) handleOperatorExecutionWorkspace(w http.ResponseWriter, r *htt
 	executionID = strings.TrimSuffix(executionID, "/workspace")
 	executionID = strings.TrimSuffix(executionID, "/")
 	if executionID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "operator_workspace.missing_execution_id"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "operator_workspace.missing_execution_id"})
 		return
 	}
-	run, found, err := h.Runs.GetByExecutionID(executionID)
+	run, found, err := h.Runs.GetByExecutionID(r.Context(), executionID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "operator_workspace.lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "operator_workspace.lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "operator_workspace.not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "operator_workspace.not_found"})
 		return
 	}
-	records := h.Events.RecordsByExecution(executionID)
+	records := h.Events.RecordsByExecution(r.Context(), executionID)
 	inspectionView := h.buildInspectionView(run, records)
-	candidates, err := h.Recovery.ListByExecution(executionID)
+	candidates, err := h.Recovery.ListByExecution(r.Context(), executionID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "operator_workspace.recovery_lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "operator_workspace.recovery_lookup_failed", "message": err.Error()})
 		return
 	}
 	workspace := operatorExecutionWorkspace{
@@ -245,7 +247,7 @@ func (h *Handler) handleOperatorExecutionWorkspace(w http.ResponseWriter, r *htt
 		},
 		Boundary: "operator_surface_reads_and_requests_kernel_executes",
 	}
-	writeJSON(w, http.StatusOK, workspace)
+	httputil.WriteJSON(w, http.StatusOK, workspace)
 }
 
 func (h *Handler) buildInspectionView(run foundation.FoundationRunResult, records []events.Record) inspection.ExecutionInspectionView {
@@ -332,20 +334,20 @@ func (h *Handler) handleCreateRecoveryCandidate(w http.ResponseWriter, r *http.R
 	}
 	var req createRecoveryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "recovery.invalid_json", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "recovery.invalid_json", "message": err.Error()})
 		return
 	}
-	runtimeRecord, found, err := h.Runtime.GetExecution(req.ExecutionID)
+	runtimeRecord, found, err := h.Runtime.GetExecution(r.Context(), req.ExecutionID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "recovery.execution_lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "recovery.execution_lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "recovery.execution_not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "recovery.execution_not_found"})
 		return
 	}
 	if strings.TrimSpace(req.RequestedBySubjectID) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "recovery.missing_requested_by_subject_id"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "recovery.missing_requested_by_subject_id"})
 		return
 	}
 	action := inspection.RecoveryAction(req.RequestedAction)
@@ -362,9 +364,9 @@ func (h *Handler) handleCreateRecoveryCandidate(w http.ResponseWriter, r *http.R
 			break
 		}
 		preconditionsRefs = append(preconditionsRefs, req.ApprovalRequestID)
-		approval, found, err := h.Approvals.GetByID(req.ApprovalRequestID)
+		approval, found, err := h.Approvals.GetByID(r.Context(), req.ApprovalRequestID)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "recovery.approval_lookup_failed", "message": err.Error()})
+			httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "recovery.approval_lookup_failed", "message": err.Error()})
 			return
 		}
 		if !found {
@@ -428,11 +430,11 @@ func (h *Handler) handleCreateRecoveryCandidate(w http.ResponseWriter, r *http.R
 		CreatedAt:                  time.Now().UTC(),
 		UpdatedAt:                  time.Now().UTC(),
 	}
-	if err := h.Recovery.Create(candidate); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "recovery.create_failed", "message": err.Error()})
+	if err := h.Recovery.Create(r.Context(), candidate); err != nil {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "recovery.create_failed", "message": err.Error()})
 		return
 	}
-	_ = h.Events.Append(events.Record{
+	_ = h.Events.Append(r.Context(), events.Record{
 		EventID:             fmt.Sprintf("event-%d", time.Now().UTC().UnixNano()),
 		EventType:           "recovery.candidate_created",
 		TenantID:            runtimeRecord.TenantID,
@@ -452,7 +454,7 @@ func (h *Handler) handleCreateRecoveryCandidate(w http.ResponseWriter, r *http.R
 			"reason_codes":                 candidate.ReasonCodes,
 		},
 	})
-	writeJSON(w, http.StatusCreated, candidate)
+	httputil.WriteJSON(w, http.StatusCreated, candidate)
 }
 
 func (h *Handler) handleGetRecoveryCandidate(w http.ResponseWriter, r *http.Request) {
@@ -460,16 +462,16 @@ func (h *Handler) handleGetRecoveryCandidate(w http.ResponseWriter, r *http.Requ
 	if id == "" || strings.HasSuffix(id, "/execute") {
 		return
 	}
-	candidate, found, err := h.Recovery.GetByID(id)
+	candidate, found, err := h.Recovery.GetByID(r.Context(), id)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "recovery.lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "recovery.lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "recovery.not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "recovery.not_found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, candidate)
+	httputil.WriteJSON(w, http.StatusOK, candidate)
 }
 
 func (h *Handler) handleExecuteRecoveryCandidate(w http.ResponseWriter, r *http.Request) {
@@ -482,54 +484,54 @@ func (h *Handler) handleExecuteRecoveryCandidate(w http.ResponseWriter, r *http.
 	}
 	id = strings.TrimSuffix(id, "/execute")
 	id = strings.TrimSuffix(id, "/")
-	candidate, found, err := h.Recovery.GetByID(id)
+	candidate, found, err := h.Recovery.GetByID(r.Context(), id)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "recovery.lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "recovery.lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "recovery.not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "recovery.not_found"})
 		return
 	}
-	execution, executionFound, err := h.Runtime.GetExecution(candidate.ExecutionID)
+	execution, executionFound, err := h.Runtime.GetExecution(r.Context(), candidate.ExecutionID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "recovery.execution_lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "recovery.execution_lookup_failed", "message": err.Error()})
 		return
 	}
 	if !executionFound {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "recovery.execution_not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "recovery.execution_not_found"})
 		return
 	}
 	if candidate.State != inspection.RecoveryCandidatePending || !candidate.ReadyForExecution {
 		candidate = h.blockRecoveryCandidate(candidate, execution, []string{"recovery.not_ready_or_not_pending"}, []string{"candidate_must_be_pending_and_ready"})
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "recovery.not_ready", "candidate": candidate})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "recovery.not_ready", "candidate": candidate})
 		return
 	}
 	if candidate.RequestedAction == inspection.RecoveryResumeAfterApproval {
 		if execution.State != runtime.ExecutionStateAwaitingApproval {
 			candidate = h.blockRecoveryCandidate(candidate, execution, []string{"recovery.invalid_runtime_state.resume_after_approval"}, []string{"execution_must_be_awaiting_approval"})
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "recovery.invalid_runtime_state", "candidate": candidate})
+			httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "recovery.invalid_runtime_state", "candidate": candidate})
 			return
 		}
-		if _, err := h.Approvals.Decide(candidate.ApprovalRequestID, approvals.Decision{
+		if _, err := h.Approvals.Decide(r.Context(), candidate.ApprovalRequestID, approvals.Decision{
 			State:               approvals.StateReleased,
 			DecidedBySubjectID:  candidate.RequestedBySubjectID,
 			DecisionComment:     "release via recovery resume_after_approval",
 			DecisionReasonCodes: candidate.ReasonCodes,
 			DecidedAt:           time.Now().UTC(),
 		}); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "recovery.approval_release_failed", "message": err.Error()})
+			httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "recovery.approval_release_failed", "message": err.Error()})
 			return
 		}
-		execution, err := h.Runtime.UpdateExecutionState(candidate.ExecutionID, runtime.ExecutionStateExecutionReleased)
+		execution, err := h.Runtime.UpdateExecutionState(r.Context(), candidate.ExecutionID, runtime.ExecutionStateExecutionReleased)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "recovery.execution_release_failed", "message": err.Error()})
+			httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "recovery.execution_release_failed", "message": err.Error()})
 			return
 		}
 		candidate.State = inspection.RecoveryCandidateExecuted
 		candidate.UpdatedAt = time.Now().UTC()
-		_ = h.Recovery.Update(candidate)
-		_ = h.Events.Append(events.Record{
+		_ = h.Recovery.Update(r.Context(), candidate)
+		_ = h.Events.Append(r.Context(), events.Record{
 			EventID:             fmt.Sprintf("event-%d", time.Now().UTC().UnixNano()),
 			EventType:           "execution.released",
 			TenantID:            execution.TenantID,
@@ -549,24 +551,24 @@ func (h *Handler) handleExecuteRecoveryCandidate(w http.ResponseWriter, r *http.
 				"reason_codes":                 candidate.ReasonCodes,
 			},
 		})
-		writeJSON(w, http.StatusOK, map[string]any{"candidate": candidate, "execution": execution})
+		httputil.WriteJSON(w, http.StatusOK, map[string]any{"candidate": candidate, "execution": execution})
 		return
 	}
 	if candidate.RequestedAction == inspection.RecoveryAcknowledgeUnknown {
 		if execution.State != runtime.ExecutionStateUnknownOutcome {
 			candidate = h.blockRecoveryCandidate(candidate, execution, []string{"recovery.invalid_runtime_state.acknowledge_unknown"}, []string{"execution_must_be_unknown_outcome"})
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "recovery.invalid_runtime_state", "candidate": candidate})
+			httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "recovery.invalid_runtime_state", "candidate": candidate})
 			return
 		}
-		execution, err := h.Runtime.UpdateExecutionState(candidate.ExecutionID, runtime.ExecutionStateUnknownOutcome)
+		execution, err := h.Runtime.UpdateExecutionState(r.Context(), candidate.ExecutionID, runtime.ExecutionStateUnknownOutcome)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "recovery.unknown_outcome_failed", "message": err.Error()})
+			httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "recovery.unknown_outcome_failed", "message": err.Error()})
 			return
 		}
 		candidate.State = inspection.RecoveryCandidateExecuted
 		candidate.UpdatedAt = time.Now().UTC()
-		_ = h.Recovery.Update(candidate)
-		_ = h.Events.Append(events.Record{
+		_ = h.Recovery.Update(r.Context(), candidate)
+		_ = h.Events.Append(r.Context(), events.Record{
 			EventID:             fmt.Sprintf("event-%d", time.Now().UTC().UnixNano()),
 			EventType:           "execution.unknown_outcome",
 			TenantID:            execution.TenantID,
@@ -585,24 +587,24 @@ func (h *Handler) handleExecuteRecoveryCandidate(w http.ResponseWriter, r *http.
 				"reason_codes":                 candidate.ReasonCodes,
 			},
 		})
-		writeJSON(w, http.StatusOK, map[string]any{"candidate": candidate, "execution": execution})
+		httputil.WriteJSON(w, http.StatusOK, map[string]any{"candidate": candidate, "execution": execution})
 		return
 	}
 	if candidate.RequestedAction == inspection.RecoveryRequestManualComp {
 		if execution.State != runtime.ExecutionStateFailed && execution.State != runtime.ExecutionStateUnknownOutcome {
 			candidate = h.blockRecoveryCandidate(candidate, execution, []string{"recovery.invalid_runtime_state.manual_compensation"}, []string{"execution_must_be_failed_or_unknown_outcome"})
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "recovery.invalid_runtime_state", "candidate": candidate})
+			httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "recovery.invalid_runtime_state", "candidate": candidate})
 			return
 		}
-		execution, err := h.Runtime.UpdateExecutionState(candidate.ExecutionID, runtime.ExecutionStateCompensationPending)
+		execution, err := h.Runtime.UpdateExecutionState(r.Context(), candidate.ExecutionID, runtime.ExecutionStateCompensationPending)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "recovery.compensation_pending_failed", "message": err.Error()})
+			httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "recovery.compensation_pending_failed", "message": err.Error()})
 			return
 		}
 		candidate.State = inspection.RecoveryCandidateExecuted
 		candidate.UpdatedAt = time.Now().UTC()
-		_ = h.Recovery.Update(candidate)
-		_ = h.Events.Append(events.Record{
+		_ = h.Recovery.Update(r.Context(), candidate)
+		_ = h.Events.Append(r.Context(), events.Record{
 			EventID:             fmt.Sprintf("event-%d", time.Now().UTC().UnixNano()),
 			EventType:           "compensation.requested",
 			TenantID:            execution.TenantID,
@@ -621,17 +623,11 @@ func (h *Handler) handleExecuteRecoveryCandidate(w http.ResponseWriter, r *http.
 				"reason_codes":                 candidate.ReasonCodes,
 			},
 		})
-		writeJSON(w, http.StatusOK, map[string]any{"candidate": candidate, "execution": execution})
+		httputil.WriteJSON(w, http.StatusOK, map[string]any{"candidate": candidate, "execution": execution})
 		return
 	}
 	candidate = h.blockRecoveryCandidate(candidate, execution, []string{"recovery.action_not_supported_in_v1"}, []string{"action_out_of_scope_for_v1"})
-	writeJSON(w, http.StatusBadRequest, map[string]any{"error": "recovery.action_not_supported_in_slice", "candidate": candidate})
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
+	httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "recovery.action_not_supported_in_slice", "candidate": candidate})
 }
 
 func mapKeys(values map[string]struct{}) []string {
@@ -685,11 +681,11 @@ func (h *Handler) blockRecoveryCandidate(candidate inspection.RecoveryActionCand
 	candidate.ReasonCodes = reasonCodes
 	candidate.BlockingConstraints = blockingConstraints
 	candidate.UpdatedAt = time.Now().UTC()
-	_ = h.Recovery.Update(candidate)
+	_ = h.Recovery.Update(context.Background(), candidate)
 	if h.Events == nil {
 		return candidate
 	}
-	_ = h.Events.Append(events.Record{
+	_ = h.Events.Append(context.Background(), events.Record{
 		EventID:             fmt.Sprintf("event-%d", time.Now().UTC().UnixNano()),
 		EventType:           "recovery.execution_blocked",
 		TenantID:            execution.TenantID,

@@ -1,5 +1,7 @@
 package registry
 
+import "context"
+
 type ResolutionRequest struct {
 	CapabilityID          string
 	ContractSchemaVersion string
@@ -17,5 +19,5 @@ type ResolutionResult struct {
 }
 
 type Resolver interface {
-	Resolve(req ResolutionRequest) (ResolutionResult, error)
+	Resolve(ctx context.Context, req ResolutionRequest) (ResolutionResult, error)
 }

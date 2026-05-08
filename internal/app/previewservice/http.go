@@ -1,6 +1,7 @@
 package previewservice
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"opita-sync-framework/internal/engine/events"
 	"opita-sync-framework/internal/engine/preview"
 	"opita-sync-framework/internal/engine/simulation"
+	"opita-sync-framework/internal/httputil"
 )
 
 type Handler struct {
@@ -19,7 +21,7 @@ type Handler struct {
 }
 
 type EventWriter interface {
-	Append(record events.Record) error
+	Append(ctx context.Context, record events.Record) error
 }
 
 type createPreviewRequest struct {
@@ -89,7 +91,7 @@ func (h *Handler) Routes() http.Handler {
 func (h *Handler) handleCreatePreview(w http.ResponseWriter, r *http.Request) {
 	var req createPreviewRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "request.invalid_json", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "request.invalid_json", "message": err.Error()})
 		return
 	}
 	candidate := preview.Candidate{
@@ -108,17 +110,17 @@ func (h *Handler) handleCreatePreview(w http.ResponseWriter, r *http.Request) {
 		State:              preview.StatusPreviewWarning,
 		CreatedAt:          time.Now().UTC(),
 	}
-	if err := h.PreviewStore.CreateCandidate(candidate); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "preview.create_failed", "message": err.Error()})
+	if err := h.PreviewStore.CreateCandidate(r.Context(), candidate); err != nil {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "preview.create_failed", "message": err.Error()})
 		return
 	}
-	results, err := h.Simulation.RunAll(candidate)
+	results, err := h.Simulation.RunAll(r.Context(), candidate)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "preview.simulation_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "preview.simulation_failed", "message": err.Error()})
 		return
 	}
 	for _, result := range results {
-		_ = h.PreviewStore.SaveResult(result)
+		_ = h.PreviewStore.SaveResult(r.Context(), result)
 		_ = h.appendEvent(events.Record{
 			EventID:             fmt.Sprintf("event-%d", time.Now().UTC().UnixNano()),
 			EventType:           "preview.simulation_recorded",
@@ -155,64 +157,64 @@ func (h *Handler) handleCreatePreview(w http.ResponseWriter, r *http.Request) {
 			"preview_scope":        candidate.PreviewScope,
 		},
 	})
-	writeJSON(w, http.StatusCreated, map[string]any{"preview_candidate": candidate, "simulation_results": results})
+	httputil.WriteJSON(w, http.StatusCreated, map[string]any{"preview_candidate": candidate, "simulation_results": results})
 }
 
 func (h *Handler) handleGetPreview(w http.ResponseWriter, r *http.Request) {
 	previewID := strings.TrimPrefix(r.URL.Path, "/v1/previews/")
 	if previewID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "preview.missing_id"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "preview.missing_id"})
 		return
 	}
-	candidate, found, err := h.PreviewStore.GetCandidate(previewID)
+	candidate, found, err := h.PreviewStore.GetCandidate(r.Context(), previewID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "preview.lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "preview.lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "preview.not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "preview.not_found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, candidate)
+	httputil.WriteJSON(w, http.StatusOK, candidate)
 }
 
 func (h *Handler) handleListSimulations(w http.ResponseWriter, r *http.Request) {
 	previewID := strings.TrimSpace(r.URL.Query().Get("preview_id"))
 	if previewID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "simulations.missing_preview_id"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "simulations.missing_preview_id"})
 		return
 	}
-	results, err := h.PreviewStore.ListResults(previewID)
+	results, err := h.PreviewStore.ListResults(r.Context(), previewID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "simulations.lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "simulations.lookup_failed", "message": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"preview_id": previewID, "results": results})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"preview_id": previewID, "results": results})
 }
 
 func (h *Handler) handleGetReadablePreview(w http.ResponseWriter, r *http.Request) {
 	previewID := strings.TrimPrefix(r.URL.Path, "/v1/readable-previews/")
 	previewID = strings.TrimSuffix(previewID, "/")
 	if previewID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "readable_preview.missing_id"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "readable_preview.missing_id"})
 		return
 	}
-	candidate, found, err := h.PreviewStore.GetCandidate(previewID)
+	candidate, found, err := h.PreviewStore.GetCandidate(r.Context(), previewID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "readable_preview.lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "readable_preview.lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "readable_preview.not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "readable_preview.not_found"})
 		return
 	}
-	results, err := h.PreviewStore.ListResults(previewID)
+	results, err := h.PreviewStore.ListResults(r.Context(), previewID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "readable_preview.results_lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "readable_preview.results_lookup_failed", "message": err.Error()})
 		return
 	}
 	readable := buildReadablePreview(candidate, results)
-	writeJSON(w, http.StatusOK, readable)
+	httputil.WriteJSON(w, http.StatusOK, readable)
 }
 
 func buildReadablePreview(candidate preview.Candidate, results []preview.Result) readablePreview {
@@ -284,15 +286,9 @@ func uniqueStrings(values []string) []string {
 	return out
 }
 
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
-}
-
 func (h *Handler) appendEvent(record events.Record) error {
 	if h.Events == nil {
 		return nil
 	}
-	return h.Events.Append(record)
+	return h.Events.Append(context.Background(), record)
 }

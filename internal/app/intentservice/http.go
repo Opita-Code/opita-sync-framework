@@ -15,16 +15,17 @@ import (
 	"opita-sync-framework/internal/engine/intent"
 	"opita-sync-framework/internal/engine/registry"
 	"opita-sync-framework/internal/engine/runtime"
+	"opita-sync-framework/internal/httputil"
 )
 
 type RuntimeReader interface {
-	GetExecution(executionID string) (runtime.ExecutionRecord, bool, error)
-	UpdateExecutionState(executionID string, state runtime.ExecutionState) (runtime.ExecutionRecord, error)
+	GetExecution(ctx context.Context, executionID string) (runtime.ExecutionRecord, bool, error)
+	UpdateExecutionState(ctx context.Context, executionID string, state runtime.ExecutionState) (runtime.ExecutionRecord, error)
 }
 
 type EventReader interface {
-	RecordsByExecution(executionID string) []events.Record
-	Append(record events.Record) error
+	RecordsByExecution(ctx context.Context, executionID string) []events.Record
+	Append(ctx context.Context, record events.Record) error
 }
 
 type ContractReader interface {
@@ -32,12 +33,12 @@ type ContractReader interface {
 }
 
 type RegistryReader interface {
-	Resolve(req registry.ResolutionRequest) (registry.ResolutionResult, error)
+	Resolve(ctx context.Context, req registry.ResolutionRequest) (registry.ResolutionResult, error)
 }
 
 type ApprovalReader interface {
-	GetByID(approvalRequestID string) (approvals.Request, bool, error)
-	Decide(approvalRequestID string, decision approvals.Decision) (approvals.Request, error)
+	GetByID(ctx context.Context, approvalRequestID string) (approvals.Request, bool, error)
+	Decide(ctx context.Context, approvalRequestID string, decision approvals.Decision) (approvals.Request, error)
 }
 
 type Handler struct {
@@ -51,7 +52,7 @@ type Handler struct {
 }
 
 type RunReader interface {
-	GetByExecutionID(executionID string) (foundation.FoundationRunResult, bool, error)
+	GetByExecutionID(ctx context.Context, executionID string) (foundation.FoundationRunResult, bool, error)
 }
 
 type compileRequest struct {
@@ -120,17 +121,17 @@ type approvalDecisionRequest struct {
 }
 
 func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "service": "intent-service"})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "service": "intent-service"})
 }
 
 func (h *Handler) handleCompile(w http.ResponseWriter, r *http.Request) {
 	if h.Orchestrator == nil {
-		writeError(w, http.StatusServiceUnavailable, "service.not_ready", "orchestrator not configured")
+		httputil.WriteError(w, http.StatusServiceUnavailable, "service.not_ready", "orchestrator not configured")
 		return
 	}
 	var req compileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "request.invalid_json", err.Error())
+		httputil.WriteError(w, http.StatusBadRequest, "request.invalid_json", err.Error())
 		return
 	}
 
@@ -167,11 +168,11 @@ func (h *Handler) handleCompile(w http.ResponseWriter, r *http.Request) {
 			status = http.StatusBadRequest
 			code = "compiler.invalid_input"
 		}
-		writeError(w, status, code, err.Error())
+		httputil.WriteError(w, status, code, err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, compileResponse{
+	httputil.WriteJSON(w, http.StatusCreated, compileResponse{
 		ContractID:     result.Contract.ContractID,
 		Fingerprint:    result.Contract.Fingerprint,
 		Compilation:    result.Report.Status,
@@ -203,86 +204,86 @@ func (h *Handler) handleCompile(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleGetExecution(w http.ResponseWriter, r *http.Request) {
 	if h.Runtime == nil {
-		writeError(w, http.StatusServiceUnavailable, "service.not_ready", "runtime reader not configured")
+		httputil.WriteError(w, http.StatusServiceUnavailable, "service.not_ready", "runtime reader not configured")
 		return
 	}
 	executionID := strings.TrimPrefix(r.URL.Path, "/v1/executions/")
 	if executionID == "" {
-		writeError(w, http.StatusBadRequest, "execution.missing_id", "execution id is required")
+		httputil.WriteError(w, http.StatusBadRequest, "execution.missing_id", "execution id is required")
 		return
 	}
-	record, found, err := h.Runtime.GetExecution(executionID)
+	record, found, err := h.Runtime.GetExecution(r.Context(), executionID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "execution.lookup_failed", err.Error())
+		httputil.WriteError(w, http.StatusInternalServerError, "execution.lookup_failed", err.Error())
 		return
 	}
 	if !found {
-		writeError(w, http.StatusNotFound, "execution.not_found", "execution not found")
+		httputil.WriteError(w, http.StatusNotFound, "execution.not_found", "execution not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, record)
+	httputil.WriteJSON(w, http.StatusOK, record)
 }
 
 func (h *Handler) handleGetContract(w http.ResponseWriter, r *http.Request) {
 	if h.Contracts == nil {
-		writeError(w, http.StatusServiceUnavailable, "service.not_ready", "contract reader not configured")
+		httputil.WriteError(w, http.StatusServiceUnavailable, "service.not_ready", "contract reader not configured")
 		return
 	}
 	contractID := strings.TrimPrefix(r.URL.Path, "/v1/contracts/")
 	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract.missing_id", "contract id is required")
+		httputil.WriteError(w, http.StatusBadRequest, "contract.missing_id", "contract id is required")
 		return
 	}
 	contract, found, err := h.Contracts.GetByID(r.Context(), contractID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "contract.lookup_failed", err.Error())
+		httputil.WriteError(w, http.StatusInternalServerError, "contract.lookup_failed", err.Error())
 		return
 	}
 	if !found {
-		writeError(w, http.StatusNotFound, "contract.not_found", "contract not found")
+		httputil.WriteError(w, http.StatusNotFound, "contract.not_found", "contract not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, contract)
+	httputil.WriteJSON(w, http.StatusOK, contract)
 }
 
 func (h *Handler) handleGetEvents(w http.ResponseWriter, r *http.Request) {
 	if h.Events == nil {
-		writeError(w, http.StatusServiceUnavailable, "service.not_ready", "event reader not configured")
+		httputil.WriteError(w, http.StatusServiceUnavailable, "service.not_ready", "event reader not configured")
 		return
 	}
 	executionID := strings.TrimSpace(r.URL.Query().Get("execution_id"))
 	if executionID == "" {
-		writeError(w, http.StatusBadRequest, "events.missing_execution_id", "execution_id query param is required")
+		httputil.WriteError(w, http.StatusBadRequest, "events.missing_execution_id", "execution_id query param is required")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"execution_id": executionID, "records": h.Events.RecordsByExecution(executionID)})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"execution_id": executionID, "records": h.Events.RecordsByExecution(r.Context(), executionID)})
 }
 
 func (h *Handler) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	if h.Runs == nil {
-		writeError(w, http.StatusServiceUnavailable, "service.not_ready", "run reader not configured")
+		httputil.WriteError(w, http.StatusServiceUnavailable, "service.not_ready", "run reader not configured")
 		return
 	}
 	executionID := strings.TrimPrefix(r.URL.Path, "/v1/foundation/runs/")
 	if executionID == "" {
-		writeError(w, http.StatusBadRequest, "foundation_run.missing_execution_id", "execution id is required")
+		httputil.WriteError(w, http.StatusBadRequest, "foundation_run.missing_execution_id", "execution id is required")
 		return
 	}
-	run, found, err := h.Runs.GetByExecutionID(executionID)
+	run, found, err := h.Runs.GetByExecutionID(r.Context(), executionID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "foundation_run.lookup_failed", err.Error())
+		httputil.WriteError(w, http.StatusInternalServerError, "foundation_run.lookup_failed", err.Error())
 		return
 	}
 	if !found {
-		writeError(w, http.StatusNotFound, "foundation_run.not_found", "foundation run not found")
+		httputil.WriteError(w, http.StatusNotFound, "foundation_run.not_found", "foundation run not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, run)
+	httputil.WriteJSON(w, http.StatusOK, run)
 }
 
 func (h *Handler) handleResolveCapability(w http.ResponseWriter, r *http.Request) {
 	if h.Registry == nil {
-		writeError(w, http.StatusServiceUnavailable, "service.not_ready", "registry reader not configured")
+		httputil.WriteError(w, http.StatusServiceUnavailable, "service.not_ready", "registry reader not configured")
 		return
 	}
 	capabilityID := strings.TrimSpace(r.URL.Query().Get("capability_id"))
@@ -293,47 +294,47 @@ func (h *Handler) handleResolveCapability(w http.ResponseWriter, r *http.Request
 		environment = "dev"
 	}
 	if contractVersion == "" || resultType == "" {
-		writeError(w, http.StatusBadRequest, "registry.invalid_request", "contract_version and result_type are required")
+		httputil.WriteError(w, http.StatusBadRequest, "registry.invalid_request", "contract_version and result_type are required")
 		return
 	}
-	resolved, err := h.Registry.Resolve(registry.ResolutionRequest{
+	resolved, err := h.Registry.Resolve(r.Context(), registry.ResolutionRequest{
 		CapabilityID:          capabilityID,
 		ContractSchemaVersion: contractVersion,
 		SupportedResultType:   resultType,
 		Environment:           environment,
 	})
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "registry.resolve_failed", err.Error())
+		httputil.WriteError(w, http.StatusBadRequest, "registry.resolve_failed", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, resolved)
+	httputil.WriteJSON(w, http.StatusOK, resolved)
 }
 
 func (h *Handler) handleGetApproval(w http.ResponseWriter, r *http.Request) {
 	if h.Approvals == nil {
-		writeError(w, http.StatusServiceUnavailable, "service.not_ready", "approval reader not configured")
+		httputil.WriteError(w, http.StatusServiceUnavailable, "service.not_ready", "approval reader not configured")
 		return
 	}
 	approvalRequestID := strings.TrimPrefix(r.URL.Path, "/v1/approvals/")
 	if approvalRequestID == "" {
-		writeError(w, http.StatusBadRequest, "approval.missing_id", "approval request id is required")
+		httputil.WriteError(w, http.StatusBadRequest, "approval.missing_id", "approval request id is required")
 		return
 	}
-	request, found, err := h.Approvals.GetByID(approvalRequestID)
+	request, found, err := h.Approvals.GetByID(r.Context(), approvalRequestID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "approval.lookup_failed", err.Error())
+		httputil.WriteError(w, http.StatusInternalServerError, "approval.lookup_failed", err.Error())
 		return
 	}
 	if !found {
-		writeError(w, http.StatusNotFound, "approval.not_found", "approval request not found")
+		httputil.WriteError(w, http.StatusNotFound, "approval.not_found", "approval request not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, request)
+	httputil.WriteJSON(w, http.StatusOK, request)
 }
 
 func (h *Handler) handleApprovalDecision(w http.ResponseWriter, r *http.Request) {
 	if h.Approvals == nil || h.Runtime == nil {
-		writeError(w, http.StatusServiceUnavailable, "service.not_ready", "approval/runtime services not configured")
+		httputil.WriteError(w, http.StatusServiceUnavailable, "service.not_ready", "approval/runtime services not configured")
 		return
 	}
 	approvalRequestID := strings.TrimPrefix(r.URL.Path, "/v1/approvals/")
@@ -349,12 +350,12 @@ func (h *Handler) handleApprovalDecision(w http.ResponseWriter, r *http.Request)
 		decisionState = approvals.StateEscalated
 		approvalRequestID = strings.TrimSuffix(approvalRequestID, "/escalate")
 	default:
-		writeError(w, http.StatusBadRequest, "approval.invalid_action", "expected /v1/approvals/{id}/release|reject|escalate")
+		httputil.WriteError(w, http.StatusBadRequest, "approval.invalid_action", "expected /v1/approvals/{id}/release|reject|escalate")
 		return
 	}
 	approvalRequestID = strings.TrimSuffix(approvalRequestID, "/")
 	if approvalRequestID == "" {
-		writeError(w, http.StatusBadRequest, "approval.missing_id", "approval request id is required")
+		httputil.WriteError(w, http.StatusBadRequest, "approval.missing_id", "approval request id is required")
 		return
 	}
 	var req approvalDecisionRequest
@@ -362,32 +363,32 @@ func (h *Handler) handleApprovalDecision(w http.ResponseWriter, r *http.Request)
 		_ = json.NewDecoder(r.Body).Decode(&req)
 	}
 	if strings.TrimSpace(req.DecidedBySubjectID) == "" {
-		writeError(w, http.StatusBadRequest, "approval.missing_decider", "decided_by_subject_id is required")
+		httputil.WriteError(w, http.StatusBadRequest, "approval.missing_decider", "decided_by_subject_id is required")
 		return
 	}
-	current, found, err := h.Approvals.GetByID(approvalRequestID)
+	current, found, err := h.Approvals.GetByID(r.Context(), approvalRequestID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "approval.lookup_failed", err.Error())
+		httputil.WriteError(w, http.StatusInternalServerError, "approval.lookup_failed", err.Error())
 		return
 	}
 	if !found {
-		writeError(w, http.StatusNotFound, "approval.not_found", "approval request not found")
+		httputil.WriteError(w, http.StatusNotFound, "approval.not_found", "approval request not found")
 		return
 	}
 	var execution runtime.ExecutionRecord
 	if decisionState == approvals.StateReleased {
-		execution, found, err = h.Runtime.GetExecution(current.ExecutionID)
+		execution, found, err = h.Runtime.GetExecution(r.Context(), current.ExecutionID)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "execution.lookup_failed", err.Error())
+			httputil.WriteError(w, http.StatusInternalServerError, "execution.lookup_failed", err.Error())
 			return
 		}
 		if !found {
-			writeError(w, http.StatusNotFound, "execution.not_found", "execution not found")
+			httputil.WriteError(w, http.StatusNotFound, "execution.not_found", "execution not found")
 			return
 		}
 		if current.SourceContractFingerprint != "" && execution.ContractFingerprint != current.SourceContractFingerprint {
 			if h.Events != nil {
-				_ = h.Events.Append(events.Record{
+				_ = h.Events.Append(r.Context(), events.Record{
 					EventID:             fmt.Sprintf("event-%d", time.Now().UTC().UnixNano()),
 					EventType:           "approval.fingerprint_mismatch",
 					TenantID:            current.TenantID,
@@ -403,7 +404,7 @@ func (h *Handler) handleApprovalDecision(w http.ResponseWriter, r *http.Request)
 					},
 				})
 			}
-			writeJSON(w, http.StatusConflict, map[string]any{
+			httputil.WriteJSON(w, http.StatusConflict, map[string]any{
 				"error": map[string]any{
 					"code":    "approval.fingerprint_mismatch",
 					"message": "approval fingerprint no longer matches current execution contract",
@@ -414,7 +415,7 @@ func (h *Handler) handleApprovalDecision(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	request, err := h.Approvals.Decide(approvalRequestID, approvals.Decision{
+	request, err := h.Approvals.Decide(r.Context(), approvalRequestID, approvals.Decision{
 		State:               decisionState,
 		DecidedBySubjectID:  req.DecidedBySubjectID,
 		DecisionComment:     req.DecisionComment,
@@ -422,13 +423,13 @@ func (h *Handler) handleApprovalDecision(w http.ResponseWriter, r *http.Request)
 		DecidedAt:           time.Now().UTC(),
 	})
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "approval.decision_failed", err.Error())
+		httputil.WriteError(w, http.StatusBadRequest, "approval.decision_failed", err.Error())
 		return
 	}
 	if decisionState == approvals.StateReleased {
-		execution, err = h.Runtime.UpdateExecutionState(request.ExecutionID, runtime.ExecutionStateExecutionReleased)
+		execution, err = h.Runtime.UpdateExecutionState(r.Context(), request.ExecutionID, runtime.ExecutionStateExecutionReleased)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "execution.release_failed", err.Error())
+			httputil.WriteError(w, http.StatusInternalServerError, "execution.release_failed", err.Error())
 			return
 		}
 	}
@@ -438,7 +439,7 @@ func (h *Handler) handleApprovalDecision(w http.ResponseWriter, r *http.Request)
 			approvals.StateRejected:  "approval.rejected",
 			approvals.StateEscalated: "approval.escalated",
 		}[decisionState]
-		_ = h.Events.Append(events.Record{
+		_ = h.Events.Append(r.Context(), events.Record{
 			EventID:             fmt.Sprintf("event-%d", time.Now().UTC().UnixNano()),
 			EventType:           decisionEventType,
 			TenantID:            request.TenantID,
@@ -458,22 +459,7 @@ func (h *Handler) handleApprovalDecision(w http.ResponseWriter, r *http.Request)
 	if decisionState == approvals.StateReleased {
 		payload["execution"] = execution
 	}
-	writeJSON(w, http.StatusOK, payload)
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]any{
-			"code":    code,
-			"message": message,
-		},
-	})
+	httputil.WriteJSON(w, http.StatusOK, payload)
 }
 
 func Warmup(ctx context.Context, orchestrator *foundation.FoundationOrchestrator) error {

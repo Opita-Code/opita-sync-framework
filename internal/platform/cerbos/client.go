@@ -2,6 +2,7 @@ package cerbos
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +11,8 @@ import (
 
 	"opita-sync-framework/internal/engine/policy"
 )
+
+var _ policy.PolicyEngine = (*Client)(nil)
 
 type Client struct {
 	BaseURL    string
@@ -38,7 +41,7 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
-func (c *Client) Evaluate(input policy.Input) (policy.DecisionRecord, error) {
+func (c *Client) Evaluate(ctx context.Context, input policy.Input) (policy.DecisionRecord, error) {
 	reqBody := checkRequest{
 		RequestID: input.ExecutionID,
 		Principal: map[string]any{

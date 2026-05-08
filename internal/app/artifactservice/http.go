@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"opita-sync-framework/internal/artifacts/storage"
+	"opita-sync-framework/internal/httputil"
 	"opita-sync-framework/internal/retrieval"
 )
 
@@ -48,15 +49,15 @@ func (h *Handler) Routes() http.Handler {
 func (h *Handler) handlePutArtifact(w http.ResponseWriter, r *http.Request) {
 	var req putArtifactRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "artifact.invalid_json", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "artifact.invalid_json", "message": err.Error()})
 		return
 	}
 	body, err := base64.StdEncoding.DecodeString(req.BodyBase64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "artifact.invalid_body_base64", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "artifact.invalid_body_base64", "message": err.Error()})
 		return
 	}
-	artifact, err := h.Artifacts.Put(storage.PutRequest{
+	artifact, err := h.Artifacts.Put(r.Context(), storage.PutRequest{
 		Artifact: storage.Artifact{
 			ArtifactRef:         req.ArtifactRef,
 			TenantID:            req.TenantID,
@@ -68,11 +69,11 @@ func (h *Handler) handlePutArtifact(w http.ResponseWriter, r *http.Request) {
 		Body: body,
 	})
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "artifact.put_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "artifact.put_failed", "message": err.Error()})
 		return
 	}
 	if strings.TrimSpace(req.IndexText) != "" {
-		_ = h.Retrieval.Index(retrieval.Document{
+		_ = h.Retrieval.Index(r.Context(), retrieval.Document{
 			DocumentRef:         "doc-" + artifact.ArtifactRef,
 			TenantID:            req.TenantID,
 			ArtifactRef:         artifact.ArtifactRef,
@@ -82,25 +83,25 @@ func (h *Handler) handlePutArtifact(w http.ResponseWriter, r *http.Request) {
 			Tags:                []string{req.Kind},
 		})
 	}
-	writeJSON(w, http.StatusCreated, artifact)
+	httputil.WriteJSON(w, http.StatusCreated, artifact)
 }
 
 func (h *Handler) handleGetArtifact(w http.ResponseWriter, r *http.Request) {
 	artifactRef := strings.TrimPrefix(r.URL.Path, "/v1/artifacts/")
 	if artifactRef == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "artifact.missing_ref"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "artifact.missing_ref"})
 		return
 	}
-	artifact, found, err := h.Artifacts.Get(artifactRef)
+	artifact, found, err := h.Artifacts.Get(r.Context(), artifactRef)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "artifact.get_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "artifact.get_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "artifact.not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "artifact.not_found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{
 		"artifact":    artifact.Artifact,
 		"body_base64": base64.StdEncoding.EncodeToString(artifact.Body),
 	})
@@ -109,19 +110,13 @@ func (h *Handler) handleGetArtifact(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request) {
 	var req searchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "retrieval.invalid_json", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "retrieval.invalid_json", "message": err.Error()})
 		return
 	}
-	results, err := h.Retrieval.Search(retrieval.Query{TenantID: req.TenantID, Text: req.Text, Limit: req.Limit})
+	results, err := h.Retrieval.Search(r.Context(), retrieval.Query{TenantID: req.TenantID, Text: req.Text, Limit: req.Limit})
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "retrieval.search_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "retrieval.search_failed", "message": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"results": results})
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"results": results})
 }

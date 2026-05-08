@@ -94,8 +94,8 @@ func TestReleaseApprovalRequiresDecider(t *testing.T) {
 		CreatedAt:                 time.Now().UTC(),
 		UpdatedAt:                 time.Now().UTC(),
 	}
-	_ = approvalStore.Create(request)
-	_ = runtimeStore.CreateExecution(runtime.ExecutionRecord{ExecutionID: "exec-1", TenantID: "tenant-1", ContractID: "contract-1", ContractFingerprint: "fp-1", TraceID: "trace-1", State: runtime.ExecutionStateAwaitingApproval, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()})
+	_ = approvalStore.Create(context.Background(), request)
+	_ = runtimeStore.CreateExecution(context.Background(), runtime.ExecutionRecord{ExecutionID: "exec-1", TenantID: "tenant-1", ContractID: "contract-1", ContractFingerprint: "fp-1", TraceID: "trace-1", State: runtime.ExecutionStateAwaitingApproval, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()})
 	h := &intentservice.Handler{Approvals: approvalStore, Runtime: runtimeStore, Events: memory.NewEventLog()}
 	req := httptest.NewRequest(http.MethodPost, "/v1/approvals/approval-1/release", bytes.NewReader([]byte(`{}`)))
 	w := httptest.NewRecorder()
@@ -120,8 +120,8 @@ func TestReleaseApprovalRejectsFingerprintMismatch(t *testing.T) {
 		CreatedAt:                 time.Now().UTC(),
 		UpdatedAt:                 time.Now().UTC(),
 	}
-	_ = approvalStore.Create(request)
-	_ = runtimeStore.CreateExecution(runtime.ExecutionRecord{ExecutionID: "exec-1", TenantID: "tenant-1", ContractID: "contract-1", ContractFingerprint: "fp-current", TraceID: "trace-1", State: runtime.ExecutionStateAwaitingApproval, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()})
+	_ = approvalStore.Create(context.Background(), request)
+	_ = runtimeStore.CreateExecution(context.Background(), runtime.ExecutionRecord{ExecutionID: "exec-1", TenantID: "tenant-1", ContractID: "contract-1", ContractFingerprint: "fp-current", TraceID: "trace-1", State: runtime.ExecutionStateAwaitingApproval, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()})
 	h := &intentservice.Handler{Approvals: approvalStore, Runtime: runtimeStore, Events: memory.NewEventLog()}
 	body, _ := json.Marshal(map[string]any{"decided_by_subject_id": "approver-1"})
 	req := httptest.NewRequest(http.MethodPost, "/v1/approvals/approval-1/release", bytes.NewReader(body))
@@ -147,8 +147,8 @@ func TestRejectApprovalReturnsDecision(t *testing.T) {
 		CreatedAt:                 time.Now().UTC(),
 		UpdatedAt:                 time.Now().UTC(),
 	}
-	_ = approvalStore.Create(request)
-	_ = runtimeStore.CreateExecution(runtime.ExecutionRecord{ExecutionID: "exec-1", TenantID: "tenant-1", ContractID: "contract-1", ContractFingerprint: "fp-1", TraceID: "trace-1", State: runtime.ExecutionStateAwaitingApproval, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()})
+	_ = approvalStore.Create(context.Background(), request)
+	_ = runtimeStore.CreateExecution(context.Background(), runtime.ExecutionRecord{ExecutionID: "exec-1", TenantID: "tenant-1", ContractID: "contract-1", ContractFingerprint: "fp-1", TraceID: "trace-1", State: runtime.ExecutionStateAwaitingApproval, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()})
 	h := &intentservice.Handler{Approvals: approvalStore, Runtime: runtimeStore, Events: memory.NewEventLog()}
 	body, _ := json.Marshal(map[string]any{"decided_by_subject_id": "approver-1", "decision_reason_codes": []string{"approval.reject.manual"}})
 	req := httptest.NewRequest(http.MethodPost, "/v1/approvals/approval-1/reject", bytes.NewReader(body))

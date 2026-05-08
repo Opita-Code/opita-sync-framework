@@ -17,12 +17,12 @@ func NewIntakeStore(store *Store) *IntakeStore {
 	return &IntakeStore{store: store}
 }
 
-func (s *IntakeStore) CreateTurn(turn intake.ConversationTurn) error {
+func (s *IntakeStore) CreateTurn(ctx context.Context, turn intake.ConversationTurn) error {
 	raw, err := json.Marshal(turn)
 	if err != nil {
 		return fmt.Errorf("marshal intake turn: %w", err)
 	}
-	_, err = s.store.DB.ExecContext(contextBackground(), `
+	_, err = s.store.DB.ExecContext(ctx, `
 		insert into intake_turns (conversation_turn_id, session_id, tenant_id, subject_id, trace_id, payload, created_at)
 		values ($1, $2, $3, $4, $5, $6, $7)
 	`, turn.ConversationTurnID, turn.SessionID, turn.TenantID, turn.SubjectID, turn.TraceID, raw, turn.Timestamp)
@@ -32,12 +32,12 @@ func (s *IntakeStore) CreateTurn(turn intake.ConversationTurn) error {
 	return nil
 }
 
-func (s *IntakeStore) CreateSession(session intake.Session) error {
+func (s *IntakeStore) CreateSession(ctx context.Context, session intake.Session) error {
 	raw, err := json.Marshal(session)
 	if err != nil {
 		return fmt.Errorf("marshal intake session: %w", err)
 	}
-	_, err = s.store.DB.ExecContext(contextBackground(), `
+	_, err = s.store.DB.ExecContext(ctx, `
 		insert into intake_sessions (intake_session_id, session_id, tenant_id, subject_id, trace_id, payload, updated_at)
 		values ($1, $2, $3, $4, $5, $6, $7)
 		on conflict (intake_session_id) do update set payload = excluded.payload, updated_at = excluded.updated_at
@@ -48,12 +48,12 @@ func (s *IntakeStore) CreateSession(session intake.Session) error {
 	return nil
 }
 
-func (s *IntakeStore) SaveIntentCandidate(candidate intake.IntentCandidate) error {
+func (s *IntakeStore) SaveIntentCandidate(ctx context.Context, candidate intake.IntentCandidate) error {
 	raw, err := json.Marshal(candidate)
 	if err != nil {
 		return fmt.Errorf("marshal intent candidate: %w", err)
 	}
-	_, err = s.store.DB.ExecContext(contextBackground(), `
+	_, err = s.store.DB.ExecContext(ctx, `
 		insert into intent_candidates (intent_candidate_id, payload, created_at)
 		values ($1, $2, $3)
 		on conflict (intent_candidate_id) do update set payload = excluded.payload
@@ -64,9 +64,9 @@ func (s *IntakeStore) SaveIntentCandidate(candidate intake.IntentCandidate) erro
 	return nil
 }
 
-func (s *IntakeStore) GetSession(intakeSessionID string) (intake.Session, bool, error) {
+func (s *IntakeStore) GetSession(ctx context.Context, intakeSessionID string) (intake.Session, bool, error) {
 	var raw []byte
-	err := s.store.DB.QueryRowContext(contextBackground(), `select payload from intake_sessions where intake_session_id = $1`, intakeSessionID).Scan(&raw)
+	err := s.store.DB.QueryRowContext(ctx, `select payload from intake_sessions where intake_session_id = $1`, intakeSessionID).Scan(&raw)
 	if err != nil {
 		if isNoRows(err) {
 			return intake.Session{}, false, nil
@@ -80,9 +80,9 @@ func (s *IntakeStore) GetSession(intakeSessionID string) (intake.Session, bool, 
 	return session, true, nil
 }
 
-func (s *IntakeStore) GetIntentCandidate(intentCandidateID string) (intake.IntentCandidate, bool, error) {
+func (s *IntakeStore) GetIntentCandidate(ctx context.Context, intentCandidateID string) (intake.IntentCandidate, bool, error) {
 	var raw []byte
-	err := s.store.DB.QueryRowContext(contextBackground(), `select payload from intent_candidates where intent_candidate_id = $1`, intentCandidateID).Scan(&raw)
+	err := s.store.DB.QueryRowContext(ctx, `select payload from intent_candidates where intent_candidate_id = $1`, intentCandidateID).Scan(&raw)
 	if err != nil {
 		if isNoRows(err) {
 			return intake.IntentCandidate{}, false, nil

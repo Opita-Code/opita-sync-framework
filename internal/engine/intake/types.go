@@ -1,6 +1,9 @@
 package intake
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type SessionState string
 
@@ -66,9 +69,9 @@ type IntentCandidate struct {
 }
 
 type Service interface {
-	CreateTurn(turn ConversationTurn) error
-	CreateSession(session Session) error
-	SaveIntentCandidate(candidate IntentCandidate) error
-	GetSession(intakeSessionID string) (Session, bool, error)
-	GetIntentCandidate(intentCandidateID string) (IntentCandidate, bool, error)
+	CreateTurn(ctx context.Context, turn ConversationTurn) error
+	CreateSession(ctx context.Context, session Session) error
+	SaveIntentCandidate(ctx context.Context, candidate IntentCandidate) error
+	GetSession(ctx context.Context, intakeSessionID string) (Session, bool, error)
+	GetIntentCandidate(ctx context.Context, intentCandidateID string) (IntentCandidate, bool, error)
 }

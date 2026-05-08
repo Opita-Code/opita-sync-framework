@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"opita-sync-framework/internal/app/accessservice"
@@ -30,10 +32,13 @@ import (
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
 	registryRoot := filepath.Join("definitions", "capabilities")
 	registryResolver, err := filesystem.NewRegistryResolver(registryRoot)
 	if err != nil {
-		log.Fatalf("intent-service registry bootstrap failed: %v", err)
+		slog.Error("intent-service registry bootstrap failed", "error", err)
+		os.Exit(1)
 	}
 	policyEngine := selectPolicyEngine()
 
@@ -51,28 +56,33 @@ func main() {
 	tenantStore := memory.NewTenantStore()
 	artifactStore, err := filesystem.NewArtifactStore(filepath.Join("data", "artifacts"))
 	if err != nil {
-		log.Fatalf("artifact store bootstrap failed: %v", err)
+		slog.Error("artifact store bootstrap failed", "error", err)
+		os.Exit(1)
 	}
 	retrievalStore := memory.NewRetrievalStore()
+
+	var pgStore *pgplatform.Store
 
 	if databaseURL := os.Getenv("OSF_DATABASE_URL"); databaseURL != "" {
 		store, err := pgplatform.New(context.Background(), databaseURL)
 		if err != nil {
-			log.Fatalf("intent-service postgres bootstrap failed: %v", err)
+			slog.Error("intent-service postgres bootstrap failed", "error", err)
+			os.Exit(1)
 		}
-		defer store.Close()
+		pgStore = store
 		repo = nil
 		runtimeStore = nil
 		eventLog = nil
 		runStore = nil
 
 		orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, accessHandler, pilotHandler := buildPostgresWiring(store, registryResolver)
-		serve(orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, accessHandler, pilotHandler)
+		serveWithShutdown(orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, accessHandler, pilotHandler, pgStore)
 		return
 	}
 
 	compiler := intent.NewCompiler(repo)
 	orchestrator := &foundation.FoundationOrchestrator{
+		Logger:    slog.Default(),
 		Compiler:  compiler,
 		Policy:    policyEngine,
 		Runtime:   runtimeStore,
@@ -91,7 +101,7 @@ func main() {
 	tenantHandler := tenantservice.NewHandler(tenantStore, eventLog)
 	accessHandler := accessservice.NewHandler(accessStore, eventLog, approvalStore)
 	pilotHandler := pilotservice.NewHandler(eventLog)
-	serve(orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, accessHandler, pilotHandler)
+	serveWithShutdown(orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, accessHandler, pilotHandler, nil)
 }
 
 func buildPostgresWiring(store *pgplatform.Store, registryResolver *filesystem.RegistryResolver) (*foundation.FoundationOrchestrator, *intentservice.Handler, *previewservice.Handler, *surfaceservice.Handler, *operatorsurface.Handler, *devsurface.Handler, *artifactservice.Handler, *tenantservice.Handler, *accessservice.Handler, *pilotservice.Handler) {
@@ -110,10 +120,12 @@ func buildPostgresWiring(store *pgplatform.Store, registryResolver *filesystem.R
 	tenantStore := pgplatform.NewTenantStore(store)
 	artifactStore, err := filesystem.NewArtifactStore(filepath.Join("data", "artifacts"))
 	if err != nil {
-		log.Fatalf("artifact store bootstrap failed: %v", err)
+		slog.Error("artifact store bootstrap failed", "error", err)
+		os.Exit(1)
 	}
 	retrievalStore := memory.NewRetrievalStore()
 	orchestrator := &foundation.FoundationOrchestrator{
+		Logger:    slog.Default(),
 		Compiler:  compiler,
 		Policy:    selectPolicyEngine(),
 		Runtime:   runtimeStore,
@@ -134,13 +146,15 @@ func buildPostgresWiring(store *pgplatform.Store, registryResolver *filesystem.R
 	return orchestrator, handler, previewHandler, surfaceHandler, operatorHandler, devHandler, artifactHandler, tenantHandler, accessHandler, pilotHandler
 }
 
-func serve(orchestrator *foundation.FoundationOrchestrator, handler *intentservice.Handler, previewHandler *previewservice.Handler, surfaceHandler *surfaceservice.Handler, operatorHandler *operatorsurface.Handler, devHandler *devsurface.Handler, artifactHandler *artifactservice.Handler, tenantHandler *tenantservice.Handler, accessHandler *accessservice.Handler, pilotHandler *pilotservice.Handler) {
+func serveWithShutdown(orchestrator *foundation.FoundationOrchestrator, handler *intentservice.Handler, previewHandler *previewservice.Handler, surfaceHandler *surfaceservice.Handler, operatorHandler *operatorsurface.Handler, devHandler *devsurface.Handler, artifactHandler *artifactservice.Handler, tenantHandler *tenantservice.Handler, accessHandler *accessservice.Handler, pilotHandler *pilotservice.Handler, dbStore *pgplatform.Store) {
 	if err := orchestrator.Validate(); err != nil {
-		log.Fatalf("intent-service wiring invalid: %v", err)
+		slog.Error("intent-service wiring invalid", "error", err)
+		os.Exit(1)
 	}
 
 	if err := intentservice.Warmup(context.Background(), orchestrator); err != nil {
-		log.Fatalf("intent-service bootstrap failed: %v", err)
+		slog.Error("intent-service bootstrap failed", "error", err)
+		os.Exit(1)
 	}
 
 	mux := http.NewServeMux()
@@ -186,12 +200,50 @@ func serve(orchestrator *foundation.FoundationOrchestrator, handler *intentservi
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	log.Printf(
-		"intent-service ready on %s (foundation slice bootstrap complete, mode=%s)",
-		server.Addr,
-		detectMode(handler),
+	slog.Info("intent-service ready",
+		"addr", server.Addr,
+		"mode", detectMode(handler),
 	)
-	log.Fatal(server.ListenAndServe())
+
+	// Graceful shutdown on SIGINT/SIGTERM.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		<-ctx.Done()
+		stop()
+
+		slog.Info("shutting down gracefully...")
+
+		// Arm a second-signal handler for force-quit.
+		go func() {
+			secondCtx, secondStop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+			defer secondStop()
+			<-secondCtx.Done()
+			slog.Error("second signal received, force quitting")
+			if dbStore != nil {
+				dbStore.Close()
+			}
+			os.Exit(1)
+		}()
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			slog.Error("server shutdown error", "error", err)
+		}
+
+		if dbStore != nil {
+			dbStore.Close()
+			slog.Info("database connection closed")
+		}
+	}()
+
+	if err := server.ListenAndServe(); err != http.ErrServerClosed {
+		slog.Error("server error", "error", err)
+		os.Exit(1)
+	}
 }
 
 func detectMode(handler *intentservice.Handler) string {

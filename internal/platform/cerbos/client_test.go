@@ -1,6 +1,7 @@
 package cerbos_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -24,7 +25,7 @@ func TestCerbosClientEvaluateAllowMapsToRequireApprovalWhenNeeded(t *testing.T) 
 	defer srv.Close()
 
 	client := cerbos.NewClient(srv.URL)
-	decision, err := client.Evaluate(policy.Input{
+	decision, err := client.Evaluate(context.Background(), policy.Input{
 		TenantID:              "tenant-1",
 		ContractID:            "contract-1",
 		ExecutionID:           "exec-1",
@@ -53,7 +54,7 @@ func TestCerbosClientEvaluateDeny(t *testing.T) {
 	defer srv.Close()
 
 	client := cerbos.NewClient(srv.URL)
-	decision, err := client.Evaluate(policy.Input{
+	decision, err := client.Evaluate(context.Background(), policy.Input{
 		TenantID:            "tenant-1",
 		ContractID:          "contract-1",
 		ExecutionID:         "exec-1",

@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"regexp"
@@ -129,7 +130,7 @@ func TestRuntimeServiceCreateGetAndUpdateRoundTrip(t *testing.T) {
 		WithArgs(record.ExecutionID, record.ContractID, record.TenantID, record.TraceID, record.State, raw, record.CreatedAt, record.UpdatedAt).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	if err := svc.CreateExecution(record); err != nil {
+	if err := svc.CreateExecution(context.Background(), record); err != nil {
 		t.Fatalf("CreateExecution returned error: %v", err)
 	}
 
@@ -137,7 +138,7 @@ func TestRuntimeServiceCreateGetAndUpdateRoundTrip(t *testing.T) {
 		WithArgs(record.ExecutionID).
 		WillReturnRows(sqlmock.NewRows([]string{"payload"}).AddRow(raw))
 
-	got, found, err := svc.GetExecution(record.ExecutionID)
+	got, found, err := svc.GetExecution(context.Background(), record.ExecutionID)
 	if err != nil {
 		t.Fatalf("GetExecution returned error: %v", err)
 	}
@@ -161,7 +162,7 @@ func TestRuntimeServiceCreateGetAndUpdateRoundTrip(t *testing.T) {
 		WithArgs(record.ExecutionID, updated.State, updatedRaw).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	result, err := svc.UpdateExecutionState(record.ExecutionID, updated.State)
+	result, err := svc.UpdateExecutionState(context.Background(), record.ExecutionID, updated.State)
 	if err != nil {
 		t.Fatalf("UpdateExecutionState returned error: %v", err)
 	}
@@ -200,7 +201,7 @@ func TestApprovalStoreCreateGetAndDecideRoundTrip(t *testing.T) {
 		WithArgs(request.ApprovalRequestID, request.ExecutionID, request.ContractID, request.TenantID, request.TraceID, request.State, request.Mode, raw, request.CreatedAt, request.UpdatedAt).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	if err := svc.Create(request); err != nil {
+	if err := svc.Create(context.Background(), request); err != nil {
 		t.Fatalf("Create returned error: %v", err)
 	}
 
@@ -208,7 +209,7 @@ func TestApprovalStoreCreateGetAndDecideRoundTrip(t *testing.T) {
 		WithArgs(request.ApprovalRequestID).
 		WillReturnRows(sqlmock.NewRows([]string{"payload"}).AddRow(raw))
 
-	got, found, err := svc.GetByID(request.ApprovalRequestID)
+	got, found, err := svc.GetByID(context.Background(), request.ApprovalRequestID)
 	if err != nil {
 		t.Fatalf("GetByID returned error: %v", err)
 	}
@@ -237,7 +238,7 @@ func TestApprovalStoreCreateGetAndDecideRoundTrip(t *testing.T) {
 		WithArgs(request.ApprovalRequestID, updated.State, updatedRaw).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	result, err := svc.Decide(request.ApprovalRequestID, approvals.Decision{
+	result, err := svc.Decide(context.Background(), request.ApprovalRequestID, approvals.Decision{
 		State:               updated.State,
 		DecidedBySubjectID:  updated.DecidedBySubjectID,
 		DecisionComment:     updated.DecisionComment,
@@ -281,7 +282,7 @@ func TestEventLogAppendAndReadByExecution(t *testing.T) {
 		WithArgs(record.EventID, record.ExecutionID, record.EventType, record.TraceID, record.TenantID, record.OccurredAt, raw).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	if err := log.Append(record); err != nil {
+	if err := log.Append(context.Background(), record); err != nil {
 		t.Fatalf("Append returned error: %v", err)
 	}
 
@@ -289,7 +290,7 @@ func TestEventLogAppendAndReadByExecution(t *testing.T) {
 		WithArgs(record.ExecutionID).
 		WillReturnRows(sqlmock.NewRows([]string{"payload"}).AddRow(raw))
 
-	got := log.RecordsByExecution(record.ExecutionID)
+	got := log.RecordsByExecution(context.Background(), record.ExecutionID)
 	if len(got) != 1 {
 		t.Fatalf("expected 1 record, got %d", len(got))
 	}
@@ -323,7 +324,7 @@ func TestFoundationRunStoreRoundTrip(t *testing.T) {
 		WithArgs(run.Execution.ExecutionID, run.Contract.ContractID, run.Execution.TraceID, raw, sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	if err := svc.Save(run); err != nil {
+	if err := svc.Save(context.Background(), run); err != nil {
 		t.Fatalf("Save returned error: %v", err)
 	}
 
@@ -331,7 +332,7 @@ func TestFoundationRunStoreRoundTrip(t *testing.T) {
 		WithArgs(run.Execution.ExecutionID).
 		WillReturnRows(sqlmock.NewRows([]string{"payload"}).AddRow(raw))
 
-	got, found, err := svc.GetByExecutionID(run.Execution.ExecutionID)
+	got, found, err := svc.GetByExecutionID(context.Background(), run.Execution.ExecutionID)
 	if err != nil {
 		t.Fatalf("GetByExecutionID returned error: %v", err)
 	}
@@ -380,7 +381,7 @@ func TestSurfaceStoresRoundTrip(t *testing.T) {
 		insert into intake_turns (conversation_turn_id, session_id, tenant_id, subject_id, trace_id, payload, created_at)
 		values ($1, $2, $3, $4, $5, $6, $7)
 	`)).WithArgs(turn.ConversationTurnID, turn.SessionID, turn.TenantID, turn.SubjectID, turn.TraceID, turnRaw, turn.Timestamp).WillReturnResult(sqlmock.NewResult(1, 1))
-	if err := intakeStore.CreateTurn(turn); err != nil {
+	if err := intakeStore.CreateTurn(context.Background(), turn); err != nil {
 		t.Fatalf("CreateTurn: %v", err)
 	}
 
@@ -389,7 +390,7 @@ func TestSurfaceStoresRoundTrip(t *testing.T) {
 		values ($1, $2, $3, $4, $5, $6, $7)
 		on conflict (intake_session_id) do update set payload = excluded.payload, updated_at = excluded.updated_at
 	`)).WithArgs(session.IntakeSessionID, session.SessionID, session.TenantID, session.SubjectID, session.TraceID, sessionRaw, session.UpdatedAt).WillReturnResult(sqlmock.NewResult(1, 1))
-	if err := intakeStore.CreateSession(session); err != nil {
+	if err := intakeStore.CreateSession(context.Background(), session); err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
 
@@ -398,18 +399,18 @@ func TestSurfaceStoresRoundTrip(t *testing.T) {
 		values ($1, $2, $3)
 		on conflict (intent_candidate_id) do update set payload = excluded.payload
 	`)).WithArgs(candidate.IntentCandidateID, candidateRaw, sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
-	if err := intakeStore.SaveIntentCandidate(candidate); err != nil {
+	if err := intakeStore.SaveIntentCandidate(context.Background(), candidate); err != nil {
 		t.Fatalf("SaveIntentCandidate: %v", err)
 	}
 
 	mock.ExpectQuery(regexp.QuoteMeta(`select payload from intake_sessions where intake_session_id = $1`)).WithArgs(session.IntakeSessionID).WillReturnRows(sqlmock.NewRows([]string{"payload"}).AddRow(sessionRaw))
-	gotSession, found, err := intakeStore.GetSession(session.IntakeSessionID)
+	gotSession, found, err := intakeStore.GetSession(context.Background(), session.IntakeSessionID)
 	if err != nil || !found || gotSession.TraceID != session.TraceID {
 		t.Fatalf("GetSession mismatch: found=%v err=%v got=%+v", found, err, gotSession)
 	}
 
 	mock.ExpectQuery(regexp.QuoteMeta(`select payload from intent_candidates where intent_candidate_id = $1`)).WithArgs(candidate.IntentCandidateID).WillReturnRows(sqlmock.NewRows([]string{"payload"}).AddRow(candidateRaw))
-	gotCandidate, found, err := intakeStore.GetIntentCandidate(candidate.IntentCandidateID)
+	gotCandidate, found, err := intakeStore.GetIntentCandidate(context.Background(), candidate.IntentCandidateID)
 	if err != nil || !found || gotCandidate.IntentCandidateID != candidate.IntentCandidateID {
 		t.Fatalf("GetIntentCandidate mismatch: found=%v err=%v got=%+v", found, err, gotCandidate)
 	}
@@ -418,7 +419,7 @@ func TestSurfaceStoresRoundTrip(t *testing.T) {
 		insert into proposal_drafts (proposal_draft_id, tenant_id, session_id, subject_id, payload, created_at)
 		values ($1, $2, $3, $4, $5, $6)
 	`)).WithArgs(draft.ProposalDraftID, draft.TenantID, draft.SessionID, draft.SubjectID, draftRaw, draft.CreatedAt).WillReturnResult(sqlmock.NewResult(1, 1))
-	if err := proposalStore.CreateDraft(draft); err != nil {
+	if err := proposalStore.CreateDraft(context.Background(), draft); err != nil {
 		t.Fatalf("CreateDraft: %v", err)
 	}
 
@@ -427,18 +428,18 @@ func TestSurfaceStoresRoundTrip(t *testing.T) {
 		values ($1, $2, $3, $4)
 		on conflict (patchset_candidate_id) do update set payload = excluded.payload
 	`)).WithArgs(patchset.PatchsetCandidateID, patchset.ProposalDraftID, patchsetRaw, sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
-	if err := proposalStore.SavePatchset(patchset); err != nil {
+	if err := proposalStore.SavePatchset(context.Background(), patchset); err != nil {
 		t.Fatalf("SavePatchset: %v", err)
 	}
 
 	mock.ExpectQuery(regexp.QuoteMeta(`select payload from proposal_drafts where proposal_draft_id = $1`)).WithArgs(draft.ProposalDraftID).WillReturnRows(sqlmock.NewRows([]string{"payload"}).AddRow(draftRaw))
-	gotDraft, found, err := proposalStore.GetDraft(draft.ProposalDraftID)
+	gotDraft, found, err := proposalStore.GetDraft(context.Background(), draft.ProposalDraftID)
 	if err != nil || !found || gotDraft.ProposalDraftID != draft.ProposalDraftID {
 		t.Fatalf("GetDraft mismatch: found=%v err=%v got=%+v", found, err, gotDraft)
 	}
 
 	mock.ExpectQuery(regexp.QuoteMeta(`select payload from patchset_candidates where patchset_candidate_id = $1`)).WithArgs(patchset.PatchsetCandidateID).WillReturnRows(sqlmock.NewRows([]string{"payload"}).AddRow(patchsetRaw))
-	gotPatchset, found, err := proposalStore.GetPatchset(patchset.PatchsetCandidateID)
+	gotPatchset, found, err := proposalStore.GetPatchset(context.Background(), patchset.PatchsetCandidateID)
 	if err != nil || !found || gotPatchset.PatchsetCandidateID != patchset.PatchsetCandidateID {
 		t.Fatalf("GetPatchset mismatch: found=%v err=%v got=%+v", found, err, gotPatchset)
 	}
@@ -447,7 +448,7 @@ func TestSurfaceStoresRoundTrip(t *testing.T) {
 		insert into preview_candidates (preview_candidate_id, tenant_id, session_id, subject_id, contract_id, execution_id, payload, created_at)
 		values ($1, $2, $3, $4, $5, $6, $7, $8)
 	`)).WithArgs(previewCandidate.PreviewCandidateID, previewCandidate.TenantID, previewCandidate.SessionID, previewCandidate.SubjectID, previewCandidate.ContractID, previewCandidate.ExecutionID, previewRaw, previewCandidate.CreatedAt).WillReturnResult(sqlmock.NewResult(1, 1))
-	if err := previewStore.CreateCandidate(previewCandidate); err != nil {
+	if err := previewStore.CreateCandidate(context.Background(), previewCandidate); err != nil {
 		t.Fatalf("CreateCandidate: %v", err)
 	}
 
@@ -456,18 +457,18 @@ func TestSurfaceStoresRoundTrip(t *testing.T) {
 		values ($1, $2, $3, $4, $5)
 		on conflict (simulation_result_id) do update set payload = excluded.payload
 	`)).WithArgs(simulation.SimulationResultID, simulation.PreviewCandidateID, simulation.Family, simulationRaw, simulation.CreatedAt).WillReturnResult(sqlmock.NewResult(1, 1))
-	if err := previewStore.SaveResult(simulation); err != nil {
+	if err := previewStore.SaveResult(context.Background(), simulation); err != nil {
 		t.Fatalf("SaveResult: %v", err)
 	}
 
 	mock.ExpectQuery(regexp.QuoteMeta(`select payload from preview_candidates where preview_candidate_id = $1`)).WithArgs(previewCandidate.PreviewCandidateID).WillReturnRows(sqlmock.NewRows([]string{"payload"}).AddRow(previewRaw))
-	gotPreview, found, err := previewStore.GetCandidate(previewCandidate.PreviewCandidateID)
+	gotPreview, found, err := previewStore.GetCandidate(context.Background(), previewCandidate.PreviewCandidateID)
 	if err != nil || !found || gotPreview.ExecutionID != previewCandidate.ExecutionID || gotPreview.ContractID != previewCandidate.ContractID {
 		t.Fatalf("GetCandidate mismatch: found=%v err=%v got=%+v", found, err, gotPreview)
 	}
 
 	mock.ExpectQuery(regexp.QuoteMeta(`select payload from simulation_results where preview_candidate_id = $1 order by created_at asc`)).WithArgs(previewCandidate.PreviewCandidateID).WillReturnRows(sqlmock.NewRows([]string{"payload"}).AddRow(simulationRaw))
-	results, err := previewStore.ListResults(previewCandidate.PreviewCandidateID)
+	results, err := previewStore.ListResults(context.Background(), previewCandidate.PreviewCandidateID)
 	if err != nil || len(results) != 1 || results[0].PreviewCandidateID != previewCandidate.PreviewCandidateID {
 		t.Fatalf("ListResults mismatch: err=%v results=%+v", err, results)
 	}
@@ -476,12 +477,12 @@ func TestSurfaceStoresRoundTrip(t *testing.T) {
 		insert into recovery_action_candidates (recovery_action_candidate_id, execution_id, payload, created_at, updated_at)
 		values ($1, $2, $3, $4, $5)
 	`)).WithArgs(recovery.RecoveryActionCandidateID, recovery.ExecutionID, recoveryRaw, recovery.CreatedAt, recovery.UpdatedAt).WillReturnResult(sqlmock.NewResult(1, 1))
-	if err := recoveryStore.Create(recovery); err != nil {
+	if err := recoveryStore.Create(context.Background(), recovery); err != nil {
 		t.Fatalf("Recovery Create: %v", err)
 	}
 
 	mock.ExpectQuery(regexp.QuoteMeta(`select payload from recovery_action_candidates where recovery_action_candidate_id = $1`)).WithArgs(recovery.RecoveryActionCandidateID).WillReturnRows(sqlmock.NewRows([]string{"payload"}).AddRow(recoveryRaw))
-	gotRecovery, found, err := recoveryStore.GetByID(recovery.RecoveryActionCandidateID)
+	gotRecovery, found, err := recoveryStore.GetByID(context.Background(), recovery.RecoveryActionCandidateID)
 	if err != nil || !found || gotRecovery.ExecutionID != recovery.ExecutionID {
 		t.Fatalf("Recovery GetByID mismatch: found=%v err=%v got=%+v", found, err, gotRecovery)
 	}
@@ -492,7 +493,7 @@ func TestSurfaceStoresRoundTrip(t *testing.T) {
 	mock.ExpectExec(regexp.QuoteMeta(`
 		update recovery_action_candidates set payload = $2, updated_at = $3 where recovery_action_candidate_id = $1
 	`)).WithArgs(recovery.RecoveryActionCandidateID, recoveryUpdatedRaw, recovery.UpdatedAt).WillReturnResult(sqlmock.NewResult(1, 1))
-	if err := recoveryStore.Update(recovery); err != nil {
+	if err := recoveryStore.Update(context.Background(), recovery); err != nil {
 		t.Fatalf("Recovery Update: %v", err)
 	}
 
@@ -500,12 +501,12 @@ func TestSurfaceStoresRoundTrip(t *testing.T) {
 		insert into maintenance_action_candidates (maintenance_action_candidate_id, tenant_id, payload, created_at)
 		values ($1, $2, $3, $4)
 	`)).WithArgs(maint.MaintenanceActionCandidateID, maint.TenantID, maintRaw, maint.CreatedAt).WillReturnResult(sqlmock.NewResult(1, 1))
-	if err := maintenanceStore.Create(maint); err != nil {
+	if err := maintenanceStore.Create(context.Background(), maint); err != nil {
 		t.Fatalf("Maintenance Create: %v", err)
 	}
 
 	mock.ExpectQuery(regexp.QuoteMeta(`select payload from maintenance_action_candidates where maintenance_action_candidate_id = $1`)).WithArgs(maint.MaintenanceActionCandidateID).WillReturnRows(sqlmock.NewRows([]string{"payload"}).AddRow(maintRaw))
-	gotMaint, found, err := maintenanceStore.GetByID(maint.MaintenanceActionCandidateID)
+	gotMaint, found, err := maintenanceStore.GetByID(context.Background(), maint.MaintenanceActionCandidateID)
 	if err != nil || !found || gotMaint.MaintenanceActionCandidateID != maint.MaintenanceActionCandidateID {
 		t.Fatalf("Maintenance GetByID mismatch: found=%v err=%v got=%+v", found, err, gotMaint)
 	}
@@ -530,7 +531,7 @@ func TestCriticalStoresReturnTraceablePersistenceErrors(t *testing.T) {
 		  payload = excluded.payload,
 		  updated_at = excluded.updated_at
 	`)).WillReturnError(sql.ErrConnDone)
-	if err := contractRepo.Save(contextBackground(), intent.CompiledContract{ContractID: "c", Fingerprint: "fp", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err == nil || !regexp.MustCompile(`upsert compiled contract`).MatchString(err.Error()) {
+	if err := contractRepo.Save(context.Background(), intent.CompiledContract{ContractID: "c", Fingerprint: "fp", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err == nil || !regexp.MustCompile(`upsert compiled contract`).MatchString(err.Error()) {
 		t.Fatalf("expected traceable contract error, got %v", err)
 	}
 
@@ -538,7 +539,7 @@ func TestCriticalStoresReturnTraceablePersistenceErrors(t *testing.T) {
 		insert into execution_records (execution_id, contract_id, tenant_id, trace_id, state, payload, created_at, updated_at)
 		values ($1, $2, $3, $4, $5, $6, $7, $8)
 	`)).WillReturnError(sql.ErrConnDone)
-	if err := runtimeSvc.CreateExecution(runtime.ExecutionRecord{ExecutionID: "e", ContractID: "c", TenantID: "t", TraceID: "tr", State: runtime.ExecutionStateCreated, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err == nil || !regexp.MustCompile(`insert execution record`).MatchString(err.Error()) {
+	if err := runtimeSvc.CreateExecution(context.Background(), runtime.ExecutionRecord{ExecutionID: "e", ContractID: "c", TenantID: "t", TraceID: "tr", State: runtime.ExecutionStateCreated, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err == nil || !regexp.MustCompile(`insert execution record`).MatchString(err.Error()) {
 		t.Fatalf("expected traceable runtime error, got %v", err)
 	}
 
@@ -546,7 +547,7 @@ func TestCriticalStoresReturnTraceablePersistenceErrors(t *testing.T) {
 		insert into event_records (event_id, execution_id, event_type, trace_id, tenant_id, occurred_at, payload)
 		values ($1, $2, $3, $4, $5, $6, $7)
 	`)).WillReturnError(sql.ErrConnDone)
-	if err := eventLog.Append(events.Record{EventID: "ev", ExecutionID: "e", EventType: "event", TraceID: "tr", TenantID: "t", OccurredAt: time.Now()}); err == nil || !regexp.MustCompile(`insert event record`).MatchString(err.Error()) {
+	if err := eventLog.Append(context.Background(), events.Record{EventID: "ev", ExecutionID: "e", EventType: "event", TraceID: "tr", TenantID: "t", OccurredAt: time.Now()}); err == nil || !regexp.MustCompile(`insert event record`).MatchString(err.Error()) {
 		t.Fatalf("expected traceable event error, got %v", err)
 	}
 
@@ -554,7 +555,7 @@ func TestCriticalStoresReturnTraceablePersistenceErrors(t *testing.T) {
 		insert into approval_requests (approval_request_id, execution_id, contract_id, tenant_id, trace_id, state, mode, payload, created_at, updated_at)
 		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`)).WillReturnError(sql.ErrConnDone)
-	if err := approvalStore.Create(approvals.Request{ApprovalRequestID: "a", ExecutionID: "e", ContractID: "c", TenantID: "t", TraceID: "tr", State: approvals.StateAwaitingApproval, Mode: "pre_execution", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err == nil || !regexp.MustCompile(`insert approval request`).MatchString(err.Error()) {
+	if err := approvalStore.Create(context.Background(), approvals.Request{ApprovalRequestID: "a", ExecutionID: "e", ContractID: "c", TenantID: "t", TraceID: "tr", State: approvals.StateAwaitingApproval, Mode: "pre_execution", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err == nil || !regexp.MustCompile(`insert approval request`).MatchString(err.Error()) {
 		t.Fatalf("expected traceable approval error, got %v", err)
 	}
 

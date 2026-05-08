@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,7 +21,7 @@ func NewArtifactStore(root string) (*ArtifactStore, error) {
 	return &ArtifactStore{root: root}, nil
 }
 
-func (s *ArtifactStore) Put(req storage.PutRequest) (storage.Artifact, error) {
+func (s *ArtifactStore) Put(ctx context.Context, req storage.PutRequest) (storage.Artifact, error) {
 	path := s.pathFor(req.Artifact.ArtifactRef)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return storage.Artifact{}, fmt.Errorf("ensure artifact path: %w", err)
@@ -34,7 +35,7 @@ func (s *ArtifactStore) Put(req storage.PutRequest) (storage.Artifact, error) {
 	return artifact, nil
 }
 
-func (s *ArtifactStore) Get(artifactRef string) (storage.GetResponse, bool, error) {
+func (s *ArtifactStore) Get(ctx context.Context, artifactRef string) (storage.GetResponse, bool, error) {
 	path := s.pathFor(artifactRef)
 	body, err := os.ReadFile(path)
 	if err != nil {

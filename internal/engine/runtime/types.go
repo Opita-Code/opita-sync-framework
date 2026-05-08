@@ -1,6 +1,9 @@
 package runtime
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type ExecutionState string
 
@@ -34,7 +37,7 @@ type ExecutionRecord struct {
 }
 
 type RuntimeService interface {
-	CreateExecution(record ExecutionRecord) error
-	GetExecution(executionID string) (ExecutionRecord, bool, error)
-	UpdateExecutionState(executionID string, state ExecutionState) (ExecutionRecord, error)
+	CreateExecution(ctx context.Context, record ExecutionRecord) error
+	GetExecution(ctx context.Context, executionID string) (ExecutionRecord, bool, error)
+	UpdateExecutionState(ctx context.Context, executionID string, state ExecutionState) (ExecutionRecord, error)
 }

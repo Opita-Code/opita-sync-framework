@@ -1,6 +1,7 @@
 package accessservice
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,25 +11,26 @@ import (
 	"opita-sync-framework/internal/engine/access"
 	"opita-sync-framework/internal/engine/approvals"
 	"opita-sync-framework/internal/engine/events"
+	"opita-sync-framework/internal/httputil"
 )
 
 type Store interface {
-	SaveGrant(grant access.CapabilityGrant) error
-	GetGrantByID(grantID string) (access.CapabilityGrant, bool, error)
-	ListGrantsByTenant(tenantID string) ([]access.CapabilityGrant, error)
-	SaveDelegation(grant access.DelegationGrant) error
-	GetDelegationByID(grantID string) (access.DelegationGrant, bool, error)
-	ListDelegationsByTenant(tenantID string) ([]access.DelegationGrant, error)
+	SaveGrant(ctx context.Context, grant access.CapabilityGrant) error
+	GetGrantByID(ctx context.Context, grantID string) (access.CapabilityGrant, bool, error)
+	ListGrantsByTenant(ctx context.Context, tenantID string) ([]access.CapabilityGrant, error)
+	SaveDelegation(ctx context.Context, grant access.DelegationGrant) error
+	GetDelegationByID(ctx context.Context, grantID string) (access.DelegationGrant, bool, error)
+	ListDelegationsByTenant(ctx context.Context, tenantID string) ([]access.DelegationGrant, error)
 }
 
 type EventWriter interface {
-	Append(record events.Record) error
+	Append(ctx context.Context, record events.Record) error
 }
 
 type ApprovalService interface {
-	Create(request approvals.Request) error
-	GetByID(approvalRequestID string) (approvals.Request, bool, error)
-	Decide(approvalRequestID string, decision approvals.Decision) (approvals.Request, error)
+	Create(ctx context.Context, request approvals.Request) error
+	GetByID(ctx context.Context, approvalRequestID string) (approvals.Request, bool, error)
+	Decide(ctx context.Context, approvalRequestID string, decision approvals.Decision) (approvals.Request, error)
 }
 
 type Handler struct {
@@ -151,21 +153,21 @@ func (h *Handler) Routes() http.Handler {
 func (h *Handler) handleCreateGrant(w http.ResponseWriter, r *http.Request) {
 	var req createGrantRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.invalid_json", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.invalid_json", "message": err.Error()})
 		return
 	}
 	if strings.TrimSpace(req.TenantID) == "" || strings.TrimSpace(req.PrincipalRef) == "" || strings.TrimSpace(req.CapabilityID) == "" || strings.TrimSpace(req.TraceRef) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.missing_required_fields"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.missing_required_fields"})
 		return
 	}
 	now := time.Now().UTC()
 	validUntil, err := parseOptionalRFC3339(req.ValidUntil)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.invalid_valid_until", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.invalid_valid_until", "message": err.Error()})
 		return
 	}
 	if !validUntil.IsZero() && validUntil.Before(now) {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.valid_until_in_past"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.valid_until_in_past"})
 		return
 	}
 	requiresApproval := strings.Contains(req.CapabilityID, "approval") || strings.Contains(req.CapabilityID, "recovery") || strings.Contains(req.CapabilityID, "restricted")
@@ -178,55 +180,55 @@ func (h *Handler) handleCreateGrant(w http.ResponseWriter, r *http.Request) {
 	}
 	if requiresApproval && h.Approvals != nil {
 		approval := approvals.Request{ApprovalRequestID: fmt.Sprintf("approval-access-grant-%d", now.UnixNano()), ExecutionID: grant.GrantID, ContractID: grant.GrantID, TenantID: grant.TenantID, TraceID: grant.TraceRef, State: approvals.StateAwaitingApproval, Mode: "pre_execution", ReasonCodes: []string{"grant.requires_approval"}, CreatedAt: now, UpdatedAt: now}
-		if err := h.Approvals.Create(approval); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "grant.approval_create_failed", "message": err.Error()})
+		if err := h.Approvals.Create(r.Context(), approval); err != nil {
+			httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "grant.approval_create_failed", "message": err.Error()})
 			return
 		}
 		grant.ApprovalRequestID = approval.ApprovalRequestID
 	}
-	if err := h.Store.SaveGrant(grant); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "grant.save_failed", "message": err.Error()})
+	if err := h.Store.SaveGrant(r.Context(), grant); err != nil {
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "grant.save_failed", "message": err.Error()})
 		return
 	}
 	h.appendEvent(events.Record{EventID: fmt.Sprintf("event-%d", now.UnixNano()), EventType: "tenant_access.grant_created", TenantID: grant.TenantID, TraceID: grant.TraceRef, OccurredAt: now, Payload: map[string]any{"grant_id": grant.GrantID, "principal_ref": grant.PrincipalRef, "capability_id": grant.CapabilityID, "state": grant.State}})
 	if grant.ApprovalRequestID != "" {
 		h.appendEvent(events.Record{EventID: fmt.Sprintf("event-%d", now.UnixNano()+1), EventType: "tenant_access.grant_awaiting_approval", TenantID: grant.TenantID, TraceID: grant.TraceRef, ApprovalRequestID: grant.ApprovalRequestID, OccurredAt: now, Payload: map[string]any{"grant_id": grant.GrantID, "approval_request_id": grant.ApprovalRequestID}})
 	}
-	writeJSON(w, http.StatusCreated, grant)
+	httputil.WriteJSON(w, http.StatusCreated, grant)
 }
 
 func (h *Handler) handleListGrants(w http.ResponseWriter, r *http.Request) {
 	tenantID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/tenant-access/grants/"), "/")
 	if tenantID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.missing_tenant_id"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.missing_tenant_id"})
 		return
 	}
-	grants, err := h.Store.ListGrantsByTenant(tenantID)
+	grants, err := h.Store.ListGrantsByTenant(r.Context(), tenantID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "grant.list_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "grant.list_failed", "message": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"tenant_id": tenantID, "grants": grants})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"tenant_id": tenantID, "grants": grants})
 }
 
 func (h *Handler) handleCreateDelegation(w http.ResponseWriter, r *http.Request) {
 	var req createDelegationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.invalid_json", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.invalid_json", "message": err.Error()})
 		return
 	}
 	if strings.TrimSpace(req.TenantID) == "" || strings.TrimSpace(req.SourcePrincipal) == "" || strings.TrimSpace(req.TargetPrincipal) == "" || strings.TrimSpace(req.ScopeRef) == "" || strings.TrimSpace(req.TraceRef) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.missing_required_fields"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.missing_required_fields"})
 		return
 	}
 	now := time.Now().UTC()
 	validUntil, err := parseOptionalRFC3339(req.ValidUntil)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.invalid_valid_until", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.invalid_valid_until", "message": err.Error()})
 		return
 	}
 	if !validUntil.IsZero() && validUntil.Before(now) {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.valid_until_in_past"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.valid_until_in_past"})
 		return
 	}
 	requiresApproval := strings.Contains(req.ScopeRef, "approval") || strings.Contains(req.ScopeRef, "recovery") || req.MaxDepth > 1 || req.CanRedelegate
@@ -239,55 +241,55 @@ func (h *Handler) handleCreateDelegation(w http.ResponseWriter, r *http.Request)
 	}
 	if requiresApproval && h.Approvals != nil {
 		approval := approvals.Request{ApprovalRequestID: fmt.Sprintf("approval-access-delegation-%d", now.UnixNano()), ExecutionID: grant.GrantID, ContractID: grant.GrantID, TenantID: grant.TenantID, TraceID: grant.TraceRef, State: approvals.StateAwaitingApproval, Mode: "pre_execution", ReasonCodes: []string{"delegation.requires_approval"}, CreatedAt: now, UpdatedAt: now}
-		if err := h.Approvals.Create(approval); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "delegation.approval_create_failed", "message": err.Error()})
+		if err := h.Approvals.Create(r.Context(), approval); err != nil {
+			httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "delegation.approval_create_failed", "message": err.Error()})
 			return
 		}
 		grant.ApprovalRequestID = approval.ApprovalRequestID
 	}
-	if err := h.Store.SaveDelegation(grant); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "delegation.save_failed", "message": err.Error()})
+	if err := h.Store.SaveDelegation(r.Context(), grant); err != nil {
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "delegation.save_failed", "message": err.Error()})
 		return
 	}
 	h.appendEvent(events.Record{EventID: fmt.Sprintf("event-%d", now.UnixNano()+1), EventType: "tenant_access.delegation_created", TenantID: grant.TenantID, TraceID: grant.TraceRef, OccurredAt: now, Payload: map[string]any{"grant_id": grant.GrantID, "source_principal": grant.SourcePrincipal, "target_principal": grant.TargetPrincipal, "scope_ref": grant.ScopeRef, "state": grant.State}})
 	if grant.ApprovalRequestID != "" {
 		h.appendEvent(events.Record{EventID: fmt.Sprintf("event-%d", now.UnixNano()+2), EventType: "tenant_access.delegation_awaiting_approval", TenantID: grant.TenantID, TraceID: grant.TraceRef, ApprovalRequestID: grant.ApprovalRequestID, OccurredAt: now, Payload: map[string]any{"grant_id": grant.GrantID, "approval_request_id": grant.ApprovalRequestID}})
 	}
-	writeJSON(w, http.StatusCreated, grant)
+	httputil.WriteJSON(w, http.StatusCreated, grant)
 }
 
 func (h *Handler) handleListDelegations(w http.ResponseWriter, r *http.Request) {
 	tenantID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/tenant-access/delegations/"), "/")
 	if tenantID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.missing_tenant_id"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.missing_tenant_id"})
 		return
 	}
-	delegations, err := h.Store.ListDelegationsByTenant(tenantID)
+	delegations, err := h.Store.ListDelegationsByTenant(r.Context(), tenantID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "delegation.list_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "delegation.list_failed", "message": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"tenant_id": tenantID, "delegations": delegations})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"tenant_id": tenantID, "delegations": delegations})
 }
 
 func (h *Handler) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	tenantID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/tenant-access/workspace/"), "/")
 	if tenantID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "workspace.missing_tenant_id"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "workspace.missing_tenant_id"})
 		return
 	}
-	grants, err := h.Store.ListGrantsByTenant(tenantID)
+	grants, err := h.Store.ListGrantsByTenant(r.Context(), tenantID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "workspace.grants_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "workspace.grants_failed", "message": err.Error()})
 		return
 	}
-	delegations, err := h.Store.ListDelegationsByTenant(tenantID)
+	delegations, err := h.Store.ListDelegationsByTenant(r.Context(), tenantID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "workspace.delegations_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "workspace.delegations_failed", "message": err.Error()})
 		return
 	}
 	workspace := buildAccessAdminWorkspace(tenantID, grants, delegations)
-	writeJSON(w, http.StatusOK, workspace)
+	httputil.WriteJSON(w, http.StatusOK, workspace)
 }
 
 func (h *Handler) handleGrantAction(w http.ResponseWriter, r *http.Request) {
@@ -295,13 +297,13 @@ func (h *Handler) handleGrantAction(w http.ResponseWriter, r *http.Request) {
 	if grantID == "" || action == "" {
 		return
 	}
-	grant, found, err := h.Store.GetGrantByID(grantID)
+	grant, found, err := h.Store.GetGrantByID(r.Context(), grantID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "grant.lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "grant.lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "grant.not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "grant.not_found"})
 		return
 	}
 	switch action {
@@ -310,7 +312,7 @@ func (h *Handler) handleGrantAction(w http.ResponseWriter, r *http.Request) {
 	case "revoke":
 		h.handleRevokeGrant(w, r, grant)
 	default:
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.invalid_action"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.invalid_action"})
 	}
 }
 
@@ -319,13 +321,13 @@ func (h *Handler) handleDelegationAction(w http.ResponseWriter, r *http.Request)
 	if grantID == "" || action == "" {
 		return
 	}
-	grant, found, err := h.Store.GetDelegationByID(grantID)
+	grant, found, err := h.Store.GetDelegationByID(r.Context(), grantID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "delegation.lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "delegation.lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "delegation.not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "delegation.not_found"})
 		return
 	}
 	switch action {
@@ -334,80 +336,80 @@ func (h *Handler) handleDelegationAction(w http.ResponseWriter, r *http.Request)
 	case "revoke":
 		h.handleRevokeDelegation(w, r, grant)
 	default:
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.invalid_action"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.invalid_action"})
 	}
 }
 
 func (h *Handler) handleApproveGrant(w http.ResponseWriter, r *http.Request, grant access.CapabilityGrant) {
 	var req approvalActionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.invalid_json", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.invalid_json", "message": err.Error()})
 		return
 	}
 	if grant.State != access.StateBlocked {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": "grant.invalid_state_for_approve", "state": grant.State})
+		httputil.WriteJSON(w, http.StatusConflict, map[string]any{"error": "grant.invalid_state_for_approve", "state": grant.State})
 		return
 	}
 	if h.Approvals == nil || grant.ApprovalRequestID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.approval_not_available"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.approval_not_available"})
 		return
 	}
-	_, err := h.Approvals.Decide(grant.ApprovalRequestID, approvals.Decision{State: approvals.StateReleased, DecidedBySubjectID: req.DecidedBySubjectID, DecisionComment: req.DecisionComment, DecisionReasonCodes: req.DecisionReasonCodes, DecidedAt: time.Now().UTC()})
+	_, err := h.Approvals.Decide(r.Context(), grant.ApprovalRequestID, approvals.Decision{State: approvals.StateReleased, DecidedBySubjectID: req.DecidedBySubjectID, DecisionComment: req.DecisionComment, DecisionReasonCodes: req.DecisionReasonCodes, DecidedAt: time.Now().UTC()})
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.approval_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.approval_failed", "message": err.Error()})
 		return
 	}
 	grant.State = access.StateActive
 	grant.UpdatedAt = time.Now().UTC()
-	if err := h.Store.SaveGrant(grant); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "grant.save_failed", "message": err.Error()})
+	if err := h.Store.SaveGrant(r.Context(), grant); err != nil {
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "grant.save_failed", "message": err.Error()})
 		return
 	}
 	h.appendEvent(events.Record{EventID: fmt.Sprintf("event-%d", time.Now().UTC().UnixNano()), EventType: "tenant_access.grant_released", TenantID: grant.TenantID, TraceID: grant.TraceRef, ApprovalRequestID: grant.ApprovalRequestID, OccurredAt: time.Now().UTC(), Payload: map[string]any{"grant_id": grant.GrantID, "state": grant.State}})
-	writeJSON(w, http.StatusOK, grant)
+	httputil.WriteJSON(w, http.StatusOK, grant)
 }
 
 func (h *Handler) handleApproveDelegation(w http.ResponseWriter, r *http.Request, grant access.DelegationGrant) {
 	var req approvalActionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.invalid_json", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.invalid_json", "message": err.Error()})
 		return
 	}
 	if grant.State != access.StateBlocked {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": "delegation.invalid_state_for_approve", "state": grant.State})
+		httputil.WriteJSON(w, http.StatusConflict, map[string]any{"error": "delegation.invalid_state_for_approve", "state": grant.State})
 		return
 	}
 	if h.Approvals == nil || grant.ApprovalRequestID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.approval_not_available"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.approval_not_available"})
 		return
 	}
-	_, err := h.Approvals.Decide(grant.ApprovalRequestID, approvals.Decision{State: approvals.StateReleased, DecidedBySubjectID: req.DecidedBySubjectID, DecisionComment: req.DecisionComment, DecisionReasonCodes: req.DecisionReasonCodes, DecidedAt: time.Now().UTC()})
+	_, err := h.Approvals.Decide(r.Context(), grant.ApprovalRequestID, approvals.Decision{State: approvals.StateReleased, DecidedBySubjectID: req.DecidedBySubjectID, DecisionComment: req.DecisionComment, DecisionReasonCodes: req.DecisionReasonCodes, DecidedAt: time.Now().UTC()})
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.approval_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.approval_failed", "message": err.Error()})
 		return
 	}
 	grant.State = access.StateActive
 	grant.UpdatedAt = time.Now().UTC()
-	if err := h.Store.SaveDelegation(grant); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "delegation.save_failed", "message": err.Error()})
+	if err := h.Store.SaveDelegation(r.Context(), grant); err != nil {
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "delegation.save_failed", "message": err.Error()})
 		return
 	}
 	h.appendEvent(events.Record{EventID: fmt.Sprintf("event-%d", time.Now().UTC().UnixNano()), EventType: "tenant_access.delegation_released", TenantID: grant.TenantID, TraceID: grant.TraceRef, ApprovalRequestID: grant.ApprovalRequestID, OccurredAt: time.Now().UTC(), Payload: map[string]any{"grant_id": grant.GrantID, "state": grant.State}})
-	writeJSON(w, http.StatusOK, grant)
+	httputil.WriteJSON(w, http.StatusOK, grant)
 }
 
 func (h *Handler) handleRevokeGrant(w http.ResponseWriter, r *http.Request, grant access.CapabilityGrant) {
 	var req revokeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.invalid_json", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.invalid_json", "message": err.Error()})
 		return
 	}
 	if strings.TrimSpace(req.RevokedBy) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.missing_revoked_by"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "grant.missing_revoked_by"})
 		return
 	}
 	if grant.State == access.StateRevoked {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": "grant.already_revoked", "state": grant.State})
+		httputil.WriteJSON(w, http.StatusConflict, map[string]any{"error": "grant.already_revoked", "state": grant.State})
 		return
 	}
 	now := time.Now().UTC()
@@ -418,26 +420,26 @@ func (h *Handler) handleRevokeGrant(w http.ResponseWriter, r *http.Request, gran
 	if req.Justification != "" {
 		grant.Justification = strings.TrimSpace(req.Justification)
 	}
-	if err := h.Store.SaveGrant(grant); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "grant.save_failed", "message": err.Error()})
+	if err := h.Store.SaveGrant(r.Context(), grant); err != nil {
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "grant.save_failed", "message": err.Error()})
 		return
 	}
 	h.appendEvent(events.Record{EventID: fmt.Sprintf("event-%d", now.UnixNano()), EventType: "tenant_access.grant_revoked", TenantID: grant.TenantID, TraceID: grant.TraceRef, OccurredAt: now, Payload: map[string]any{"grant_id": grant.GrantID, "revoked_by": grant.RevokedBy, "state": grant.State}})
-	writeJSON(w, http.StatusOK, grant)
+	httputil.WriteJSON(w, http.StatusOK, grant)
 }
 
 func (h *Handler) handleRevokeDelegation(w http.ResponseWriter, r *http.Request, grant access.DelegationGrant) {
 	var req revokeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.invalid_json", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.invalid_json", "message": err.Error()})
 		return
 	}
 	if strings.TrimSpace(req.RevokedBy) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.missing_revoked_by"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "delegation.missing_revoked_by"})
 		return
 	}
 	if grant.State == access.StateRevoked {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": "delegation.already_revoked", "state": grant.State})
+		httputil.WriteJSON(w, http.StatusConflict, map[string]any{"error": "delegation.already_revoked", "state": grant.State})
 		return
 	}
 	now := time.Now().UTC()
@@ -448,12 +450,12 @@ func (h *Handler) handleRevokeDelegation(w http.ResponseWriter, r *http.Request,
 	if req.Justification != "" {
 		grant.Justification = strings.TrimSpace(req.Justification)
 	}
-	if err := h.Store.SaveDelegation(grant); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "delegation.save_failed", "message": err.Error()})
+	if err := h.Store.SaveDelegation(r.Context(), grant); err != nil {
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "delegation.save_failed", "message": err.Error()})
 		return
 	}
 	h.appendEvent(events.Record{EventID: fmt.Sprintf("event-%d", now.UnixNano()), EventType: "tenant_access.delegation_revoked", TenantID: grant.TenantID, TraceID: grant.TraceRef, OccurredAt: now, Payload: map[string]any{"grant_id": grant.GrantID, "revoked_by": grant.RevokedBy, "state": grant.State}})
-	writeJSON(w, http.StatusOK, grant)
+	httputil.WriteJSON(w, http.StatusOK, grant)
 }
 
 func splitActionPath(path string) (string, string) {
@@ -645,12 +647,6 @@ func cleanStrings(values []string) []string {
 
 func (h *Handler) appendEvent(record events.Record) {
 	if h.Events != nil {
-		_ = h.Events.Append(record)
+		_ = h.Events.Append(context.Background(), record)
 	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
 }

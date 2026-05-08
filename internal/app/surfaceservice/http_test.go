@@ -9,6 +9,7 @@ import (
 
 	"opita-sync-framework/internal/app/surfaceservice"
 	"opita-sync-framework/internal/platform/memory"
+	"opita-sync-framework/internal/testutil"
 )
 
 func TestCreateIntakeTurnProducesSessionAndCandidate(t *testing.T) {
@@ -72,7 +73,7 @@ func TestGetIntakeProposalWorkspaceShowsNextGates(t *testing.T) {
 	}
 	intakeSession := turnResp["intake_session"].(map[string]any)
 	intentCandidate := turnResp["intent_candidate"].(map[string]any)
-	workspaceReq := httptest.NewRequest(http.MethodGet, "/v1/workspaces/intake-proposal?intake_session_id="+getStringField(t, intakeSession, "intake_session_id", "IntakeSessionID")+"&intent_candidate_id="+getStringField(t, intentCandidate, "intent_candidate_id", "IntentCandidateID"), nil)
+	workspaceReq := httptest.NewRequest(http.MethodGet, "/v1/workspaces/intake-proposal?intake_session_id="+testutil.GetStringField(t, intakeSession, "intake_session_id", "IntakeSessionID")+"&intent_candidate_id="+testutil.GetStringField(t, intentCandidate, "intent_candidate_id", "IntentCandidateID"), nil)
 	workspaceW := httptest.NewRecorder()
 	handler.Routes().ServeHTTP(workspaceW, workspaceReq)
 	if workspaceW.Code != http.StatusOK {
@@ -117,7 +118,7 @@ func TestGetIntakeProposalWorkspaceIncludesProposalAndPatchsetSummary(t *testing
 	if err := json.Unmarshal(proposalW.Body.Bytes(), &proposalResp); err != nil {
 		t.Fatalf("unmarshal proposal response: %v", err)
 	}
-	proposalID := getStringField(t, proposalResp, "proposal_draft_id", "ProposalDraftID")
+	proposalID := testutil.GetStringField(t, proposalResp, "proposal_draft_id", "ProposalDraftID")
 
 	patchsetBody, _ := json.Marshal(map[string]any{
 		"trace_id":                          "trace-1",
@@ -139,7 +140,7 @@ func TestGetIntakeProposalWorkspaceIncludesProposalAndPatchsetSummary(t *testing
 	if err := json.Unmarshal(patchsetW.Body.Bytes(), &patchsetResp); err != nil {
 		t.Fatalf("unmarshal patchset response: %v", err)
 	}
-	patchsetID := getStringField(t, patchsetResp, "patchset_candidate_id", "PatchsetCandidateID")
+	patchsetID := testutil.GetStringField(t, patchsetResp, "patchset_candidate_id", "PatchsetCandidateID")
 
 	workspaceReq := httptest.NewRequest(http.MethodGet, "/v1/workspaces/intake-proposal?proposal_draft_id="+proposalID+"&patchset_candidate_id="+patchsetID, nil)
 	workspaceW := httptest.NewRecorder()
@@ -160,17 +161,4 @@ func TestGetIntakeProposalWorkspaceIncludesProposalAndPatchsetSummary(t *testing
 	if _, ok := workspace["patchset"]; !ok {
 		t.Fatalf("expected patchset summary in workspace")
 	}
-}
-
-func getStringField(t *testing.T, payload map[string]any, keys ...string) string {
-	t.Helper()
-	for _, key := range keys {
-		if value, ok := payload[key]; ok && value != nil {
-			if s, ok := value.(string); ok {
-				return s
-			}
-		}
-	}
-	t.Fatalf("missing string field in payload, tried keys: %v payload=%#v", keys, payload)
-	return ""
 }

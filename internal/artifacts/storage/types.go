@@ -1,6 +1,9 @@
 package storage
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type Artifact struct {
 	ArtifactRef         string    `json:"artifact_ref"`
@@ -24,6 +27,6 @@ type GetResponse struct {
 }
 
 type Service interface {
-	Put(req PutRequest) (Artifact, error)
-	Get(artifactRef string) (GetResponse, bool, error)
+	Put(ctx context.Context, req PutRequest) (Artifact, error)
+	Get(ctx context.Context, artifactRef string) (GetResponse, bool, error)
 }

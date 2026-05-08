@@ -1,6 +1,7 @@
 package tenantservice
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,15 +10,16 @@ import (
 
 	"opita-sync-framework/internal/engine/events"
 	"opita-sync-framework/internal/engine/tenant"
+	"opita-sync-framework/internal/httputil"
 )
 
 type Store interface {
-	Save(record tenant.BootstrapRecord) error
-	GetByTenantID(tenantID string) (tenant.BootstrapRecord, bool, error)
+	Save(ctx context.Context, record tenant.BootstrapRecord) error
+	GetByTenantID(ctx context.Context, tenantID string) (tenant.BootstrapRecord, bool, error)
 }
 
 type EventWriter interface {
-	Append(record events.Record) error
+	Append(ctx context.Context, record events.Record) error
 }
 
 type Handler struct {
@@ -101,12 +103,12 @@ func (h *Handler) Routes() http.Handler {
 
 func (h *Handler) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 	if h.Store == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "tenant.service_not_ready"})
+		httputil.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "tenant.service_not_ready"})
 		return
 	}
 	var req bootstrapRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "tenant.invalid_json", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "tenant.invalid_json", "message": err.Error()})
 		return
 	}
 	policyBaseline, policyOK := resolvePolicyBaseline(req.PolicyProfileRef)
@@ -151,8 +153,8 @@ func (h *Handler) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	if err := h.Store.Save(record); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "tenant.bootstrap_failed", "message": err.Error()})
+	if err := h.Store.Save(r.Context(), record); err != nil {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "tenant.bootstrap_failed", "message": err.Error()})
 		return
 	}
 	h.appendEvent(events.Record{
@@ -180,88 +182,88 @@ func (h *Handler) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 	if !operable {
 		status = http.StatusAccepted
 	}
-	writeJSON(w, status, record)
+	httputil.WriteJSON(w, status, record)
 }
 
 func (h *Handler) handleGetTenant(w http.ResponseWriter, r *http.Request) {
 	if h.Store == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "tenant.service_not_ready"})
+		httputil.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "tenant.service_not_ready"})
 		return
 	}
 	tenantID := strings.TrimPrefix(r.URL.Path, "/v1/tenants/")
 	tenantID = strings.TrimSuffix(tenantID, "/")
 	if tenantID == "" || tenantID == "bootstrap" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "tenant.missing_id"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "tenant.missing_id"})
 		return
 	}
-	record, found, err := h.Store.GetByTenantID(tenantID)
+	record, found, err := h.Store.GetByTenantID(r.Context(), tenantID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "tenant.lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "tenant.lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "tenant.not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "tenant.not_found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, record)
+	httputil.WriteJSON(w, http.StatusOK, record)
 }
 
 func (h *Handler) handleGetTenantCatalog(w http.ResponseWriter, r *http.Request) {
 	tenantID := strings.TrimPrefix(r.URL.Path, "/v1/tenants-catalog/")
 	tenantID = strings.TrimSuffix(tenantID, "/")
 	if tenantID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "tenant.missing_id"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "tenant.missing_id"})
 		return
 	}
-	record, found, err := h.Store.GetByTenantID(tenantID)
+	record, found, err := h.Store.GetByTenantID(r.Context(), tenantID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "tenant.lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "tenant.lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "tenant.not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "tenant.not_found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"tenant_id": tenantID, "catalog_projection": record.CatalogProjection})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"tenant_id": tenantID, "catalog_projection": record.CatalogProjection})
 }
 
 func (h *Handler) handleGetTenantConnectors(w http.ResponseWriter, r *http.Request) {
 	tenantID := strings.TrimPrefix(r.URL.Path, "/v1/tenants-connectors/")
 	tenantID = strings.TrimSuffix(tenantID, "/")
 	if tenantID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "tenant.missing_id"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "tenant.missing_id"})
 		return
 	}
-	record, found, err := h.Store.GetByTenantID(tenantID)
+	record, found, err := h.Store.GetByTenantID(r.Context(), tenantID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "tenant.lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "tenant.lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "tenant.not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "tenant.not_found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"tenant_id": tenantID, "connector_projection": record.ConnectorProjection})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"tenant_id": tenantID, "connector_projection": record.ConnectorProjection})
 }
 
 func (h *Handler) handleGetTenantAdminWorkspace(w http.ResponseWriter, r *http.Request) {
 	tenantID := strings.TrimPrefix(r.URL.Path, "/v1/tenant-admin/workspace/")
 	tenantID = strings.TrimSuffix(tenantID, "/")
 	if tenantID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "tenant.missing_id"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "tenant.missing_id"})
 		return
 	}
-	record, found, err := h.Store.GetByTenantID(tenantID)
+	record, found, err := h.Store.GetByTenantID(r.Context(), tenantID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "tenant.lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "tenant.lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "tenant.not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "tenant.not_found"})
 		return
 	}
 	workspace := buildTenantAdminWorkspace(record)
-	writeJSON(w, http.StatusOK, workspace)
+	httputil.WriteJSON(w, http.StatusOK, workspace)
 }
 
 func validateBootstrap(req bootstrapRequest, policyOK, approvalOK, classificationOK, catalogOK, connectorOK bool) []tenant.OperabilityCheck {
@@ -529,11 +531,5 @@ func (h *Handler) appendEvent(record events.Record) {
 	if h.Events == nil {
 		return
 	}
-	_ = h.Events.Append(record)
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
+	_ = h.Events.Append(context.Background(), record)
 }

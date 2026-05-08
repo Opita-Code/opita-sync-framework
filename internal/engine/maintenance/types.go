@@ -1,6 +1,9 @@
 package maintenance
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type SemanticDebugView struct {
 	DebugViewID      string    `json:"debug_view_id"`
@@ -44,6 +47,6 @@ type ActionCandidate struct {
 }
 
 type Service interface {
-	Create(candidate ActionCandidate) error
-	GetByID(id string) (ActionCandidate, bool, error)
+	Create(ctx context.Context, candidate ActionCandidate) error
+	GetByID(ctx context.Context, id string) (ActionCandidate, bool, error)
 }

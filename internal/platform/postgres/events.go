@@ -1,11 +1,14 @@
 package postgres
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	"opita-sync-framework/internal/engine/events"
 )
+
+var _ events.EventLog = (*EventLog)(nil)
 
 type EventLog struct {
 	store *Store
@@ -15,12 +18,12 @@ func NewEventLog(store *Store) *EventLog {
 	return &EventLog{store: store}
 }
 
-func (l *EventLog) Append(record events.Record) error {
+func (l *EventLog) Append(ctx context.Context, record events.Record) error {
 	raw, err := json.Marshal(record)
 	if err != nil {
 		return fmt.Errorf("marshal event record: %w", err)
 	}
-	_, err = l.store.DB.ExecContext(contextBackground(), `
+	_, err = l.store.DB.ExecContext(ctx, `
 		insert into event_records (event_id, execution_id, event_type, trace_id, tenant_id, occurred_at, payload)
 		values ($1, $2, $3, $4, $5, $6, $7)
 	`, record.EventID, record.ExecutionID, record.EventType, record.TraceID, record.TenantID, record.OccurredAt, raw)
@@ -30,8 +33,8 @@ func (l *EventLog) Append(record events.Record) error {
 	return nil
 }
 
-func (l *EventLog) RecordsByExecution(executionID string) []events.Record {
-	rows, err := l.store.DB.QueryContext(contextBackground(), `select payload from event_records where execution_id = $1 order by occurred_at asc`, executionID)
+func (l *EventLog) RecordsByExecution(ctx context.Context, executionID string) []events.Record {
+	rows, err := l.store.DB.QueryContext(ctx, `select payload from event_records where execution_id = $1 order by occurred_at asc`, executionID)
 	if err != nil {
 		return nil
 	}
@@ -51,8 +54,8 @@ func (l *EventLog) RecordsByExecution(executionID string) []events.Record {
 	return out
 }
 
-func (l *EventLog) Records() []events.Record {
-	rows, err := l.store.DB.QueryContext(contextBackground(), `select payload from event_records order by occurred_at asc`)
+func (l *EventLog) Records(ctx context.Context) []events.Record {
+	rows, err := l.store.DB.QueryContext(ctx, `select payload from event_records order by occurred_at asc`)
 	if err != nil {
 		return nil
 	}

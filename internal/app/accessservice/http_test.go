@@ -2,6 +2,7 @@ package accessservice_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -297,7 +298,7 @@ func TestWorkspaceShowsExpiredGrantIDs(t *testing.T) {
 	approvals := memory.NewApprovalStore()
 	h := accessservice.NewHandler(store, events, approvals)
 	now := time.Now().UTC().Add(-2 * time.Hour)
-	_ = store.SaveGrant(access.CapabilityGrant{GrantID: "grant-expired-1", TenantID: "tenant-1", PrincipalRef: "user://alice", PrincipalType: "person", CapabilityID: "tenant.execution.inspect_run", AllowedActions: []string{"use"}, TraceRef: "trace-grant-expired", State: access.StateActive, ValidFrom: now, ValidUntil: now.Add(30 * time.Minute), CreatedAt: now, UpdatedAt: now})
+	_ = store.SaveGrant(context.Background(), access.CapabilityGrant{GrantID: "grant-expired-1", TenantID: "tenant-1", PrincipalRef: "user://alice", PrincipalType: "person", CapabilityID: "tenant.execution.inspect_run", AllowedActions: []string{"use"}, TraceRef: "trace-grant-expired", State: access.StateActive, ValidFrom: now, ValidUntil: now.Add(30 * time.Minute), CreatedAt: now, UpdatedAt: now})
 	wsReq := httptest.NewRequest(http.MethodGet, "/v1/tenant-access/workspace/tenant-1", nil)
 	wsW := httptest.NewRecorder()
 	h.Routes().ServeHTTP(wsW, wsReq)

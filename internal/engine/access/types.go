@@ -1,6 +1,9 @@
 package access
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type State string
 
@@ -59,10 +62,10 @@ type DelegationGrant struct {
 }
 
 type Store interface {
-	SaveGrant(grant CapabilityGrant) error
-	GetGrantByID(grantID string) (CapabilityGrant, bool, error)
-	ListGrantsByTenant(tenantID string) ([]CapabilityGrant, error)
-	SaveDelegation(grant DelegationGrant) error
-	GetDelegationByID(grantID string) (DelegationGrant, bool, error)
-	ListDelegationsByTenant(tenantID string) ([]DelegationGrant, error)
+	SaveGrant(ctx context.Context, grant CapabilityGrant) error
+	GetGrantByID(ctx context.Context, grantID string) (CapabilityGrant, bool, error)
+	ListGrantsByTenant(ctx context.Context, tenantID string) ([]CapabilityGrant, error)
+	SaveDelegation(ctx context.Context, grant DelegationGrant) error
+	GetDelegationByID(ctx context.Context, grantID string) (DelegationGrant, bool, error)
+	ListDelegationsByTenant(ctx context.Context, tenantID string) ([]DelegationGrant, error)
 }

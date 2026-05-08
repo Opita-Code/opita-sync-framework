@@ -1,6 +1,9 @@
 package proposal
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type DraftState string
 
@@ -51,8 +54,8 @@ type PatchsetCandidate struct {
 }
 
 type Service interface {
-	CreateDraft(draft Draft) error
-	GetDraft(proposalDraftID string) (Draft, bool, error)
-	SavePatchset(candidate PatchsetCandidate) error
-	GetPatchset(patchsetCandidateID string) (PatchsetCandidate, bool, error)
+	CreateDraft(ctx context.Context, draft Draft) error
+	GetDraft(ctx context.Context, proposalDraftID string) (Draft, bool, error)
+	SavePatchset(ctx context.Context, candidate PatchsetCandidate) error
+	GetPatchset(ctx context.Context, patchsetCandidateID string) (PatchsetCandidate, bool, error)
 }

@@ -1,6 +1,9 @@
 package approvals
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type State string
 
@@ -40,7 +43,7 @@ type Request struct {
 }
 
 type Service interface {
-	Create(request Request) error
-	GetByID(approvalRequestID string) (Request, bool, error)
-	Decide(approvalRequestID string, decision Decision) (Request, error)
+	Create(ctx context.Context, request Request) error
+	GetByID(ctx context.Context, approvalRequestID string) (Request, bool, error)
+	Decide(ctx context.Context, approvalRequestID string, decision Decision) (Request, error)
 }

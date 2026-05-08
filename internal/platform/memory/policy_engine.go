@@ -1,11 +1,14 @@
 package memory
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"opita-sync-framework/internal/engine/policy"
 )
+
+var _ policy.PolicyEngine = (*PolicyEngine)(nil)
 
 type PolicyEngine struct{}
 
@@ -13,7 +16,12 @@ func NewPolicyEngine() *PolicyEngine {
 	return &PolicyEngine{}
 }
 
-func (e *PolicyEngine) Evaluate(input policy.Input) (policy.DecisionRecord, error) {
+func (e *PolicyEngine) Evaluate(ctx context.Context, input policy.Input) (policy.DecisionRecord, error) {
+	select {
+	case <-ctx.Done():
+		return policy.DecisionRecord{}, ctx.Err()
+	default:
+	}
 	decision := policy.DecisionAllow
 	reasonCodes := []string{"policy.allow.default"}
 

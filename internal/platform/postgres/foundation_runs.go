@@ -1,12 +1,15 @@
 package postgres
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
 	"opita-sync-framework/internal/engine/foundation"
 )
+
+var _ foundation.RunRepository = (*FoundationRunStore)(nil)
 
 type FoundationRunStore struct {
 	store *Store
@@ -16,12 +19,12 @@ func NewFoundationRunStore(store *Store) *FoundationRunStore {
 	return &FoundationRunStore{store: store}
 }
 
-func (s *FoundationRunStore) Save(result foundation.FoundationRunResult) error {
+func (s *FoundationRunStore) Save(ctx context.Context, result foundation.FoundationRunResult) error {
 	raw, err := json.Marshal(result)
 	if err != nil {
 		return fmt.Errorf("marshal foundation run: %w", err)
 	}
-	_, err = s.store.DB.ExecContext(contextBackground(), `
+	_, err = s.store.DB.ExecContext(ctx, `
 		insert into foundation_runs (execution_id, contract_id, trace_id, payload, created_at)
 		values ($1, $2, $3, $4, $5)
 		on conflict (execution_id) do update set
@@ -33,9 +36,9 @@ func (s *FoundationRunStore) Save(result foundation.FoundationRunResult) error {
 	return nil
 }
 
-func (s *FoundationRunStore) GetByExecutionID(executionID string) (foundation.FoundationRunResult, bool, error) {
+func (s *FoundationRunStore) GetByExecutionID(ctx context.Context, executionID string) (foundation.FoundationRunResult, bool, error) {
 	var raw []byte
-	err := s.store.DB.QueryRowContext(contextBackground(), `select payload from foundation_runs where execution_id = $1`, executionID).Scan(&raw)
+	err := s.store.DB.QueryRowContext(ctx, `select payload from foundation_runs where execution_id = $1`, executionID).Scan(&raw)
 	if err != nil {
 		if isNoRows(err) {
 			return foundation.FoundationRunResult{}, false, nil

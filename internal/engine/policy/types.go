@@ -1,5 +1,7 @@
 package policy
 
+import "context"
+
 type Decision string
 
 const (
@@ -30,5 +32,5 @@ type DecisionRecord struct {
 }
 
 type PolicyEngine interface {
-	Evaluate(input Input) (DecisionRecord, error)
+	Evaluate(ctx context.Context, input Input) (DecisionRecord, error)
 }

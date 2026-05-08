@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -8,6 +9,8 @@ import (
 
 	"opita-sync-framework/internal/engine/approvals"
 )
+
+var _ approvals.Service = (*ApprovalStore)(nil)
 
 type ApprovalStore struct {
 	mu       sync.RWMutex
@@ -18,7 +21,12 @@ func NewApprovalStore() *ApprovalStore {
 	return &ApprovalStore{requests: map[string]approvals.Request{}}
 }
 
-func (s *ApprovalStore) Create(request approvals.Request) error {
+func (s *ApprovalStore) Create(ctx context.Context, request approvals.Request) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, exists := s.requests[request.ApprovalRequestID]; exists {
@@ -28,14 +36,24 @@ func (s *ApprovalStore) Create(request approvals.Request) error {
 	return nil
 }
 
-func (s *ApprovalStore) GetByID(approvalRequestID string) (approvals.Request, bool, error) {
+func (s *ApprovalStore) GetByID(ctx context.Context, approvalRequestID string) (approvals.Request, bool, error) {
+	select {
+	case <-ctx.Done():
+		return approvals.Request{}, false, ctx.Err()
+	default:
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	req, found := s.requests[approvalRequestID]
 	return req, found, nil
 }
 
-func (s *ApprovalStore) Decide(approvalRequestID string, decision approvals.Decision) (approvals.Request, error) {
+func (s *ApprovalStore) Decide(ctx context.Context, approvalRequestID string, decision approvals.Decision) (approvals.Request, error) {
+	select {
+	case <-ctx.Done():
+		return approvals.Request{}, ctx.Err()
+	default:
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	req, found := s.requests[approvalRequestID]

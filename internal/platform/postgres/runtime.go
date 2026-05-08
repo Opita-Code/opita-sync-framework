@@ -1,11 +1,14 @@
 package postgres
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	"opita-sync-framework/internal/engine/runtime"
 )
+
+var _ runtime.RuntimeService = (*RuntimeService)(nil)
 
 type RuntimeService struct {
 	store *Store
@@ -15,12 +18,12 @@ func NewRuntimeService(store *Store) *RuntimeService {
 	return &RuntimeService{store: store}
 }
 
-func (s *RuntimeService) CreateExecution(record runtime.ExecutionRecord) error {
+func (s *RuntimeService) CreateExecution(ctx context.Context, record runtime.ExecutionRecord) error {
 	raw, err := json.Marshal(record)
 	if err != nil {
 		return fmt.Errorf("marshal execution record: %w", err)
 	}
-	_, err = s.store.DB.ExecContext(contextBackground(), `
+	_, err = s.store.DB.ExecContext(ctx, `
 		insert into execution_records (execution_id, contract_id, tenant_id, trace_id, state, payload, created_at, updated_at)
 		values ($1, $2, $3, $4, $5, $6, $7, $8)
 	`, record.ExecutionID, record.ContractID, record.TenantID, record.TraceID, record.State, raw, record.CreatedAt, record.UpdatedAt)
@@ -30,9 +33,9 @@ func (s *RuntimeService) CreateExecution(record runtime.ExecutionRecord) error {
 	return nil
 }
 
-func (s *RuntimeService) GetExecution(executionID string) (runtime.ExecutionRecord, bool, error) {
+func (s *RuntimeService) GetExecution(ctx context.Context, executionID string) (runtime.ExecutionRecord, bool, error) {
 	var raw []byte
-	err := s.store.DB.QueryRowContext(contextBackground(), `select payload from execution_records where execution_id = $1`, executionID).Scan(&raw)
+	err := s.store.DB.QueryRowContext(ctx, `select payload from execution_records where execution_id = $1`, executionID).Scan(&raw)
 	if err != nil {
 		if isNoRows(err) {
 			return runtime.ExecutionRecord{}, false, nil
@@ -46,8 +49,8 @@ func (s *RuntimeService) GetExecution(executionID string) (runtime.ExecutionReco
 	return record, true, nil
 }
 
-func (s *RuntimeService) UpdateExecutionState(executionID string, state runtime.ExecutionState) (runtime.ExecutionRecord, error) {
-	record, found, err := s.GetExecution(executionID)
+func (s *RuntimeService) UpdateExecutionState(ctx context.Context, executionID string, state runtime.ExecutionState) (runtime.ExecutionRecord, error) {
+	record, found, err := s.GetExecution(ctx, executionID)
 	if err != nil {
 		return runtime.ExecutionRecord{}, err
 	}
@@ -59,7 +62,7 @@ func (s *RuntimeService) UpdateExecutionState(executionID string, state runtime.
 	if err != nil {
 		return runtime.ExecutionRecord{}, fmt.Errorf("marshal execution record: %w", err)
 	}
-	_, err = s.store.DB.ExecContext(contextBackground(), `
+	_, err = s.store.DB.ExecContext(ctx, `
 		update execution_records set state = $2, payload = $3, updated_at = now() where execution_id = $1
 	`, executionID, state, raw)
 	if err != nil {

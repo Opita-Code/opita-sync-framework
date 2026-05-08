@@ -1,0 +1,73 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Go 1.24 (module: opita-sync-framework)
+  Architecture: Clean Architecture — app/handler, engine/domain, platform/infrastructure
+  Testing: go test (standard library + httptest + go-sqlmock)
+  Style: gofmt, go vet, conventional commits (feat/fix/chore/docs/refactor)
+
+strict_tdd: true
+
+testing:
+  runner:
+    command: go test -cover -count=1 ./...
+    framework: Go standard library testing
+    skip_integration: go test -short ./...
+  layers:
+    unit:
+      available: true
+      tool: testing + httptest
+    integration:
+      available: true
+      tool: httptest + go-sqlmock
+    e2e:
+      available: true
+      tool: httptest (internal/e2e/slice_test.go)
+  coverage:
+    available: true
+    command: go test -cover ./...
+  quality:
+    linter:
+      available: true
+      command: go vet ./...
+    formatter:
+      available: true
+      command: gofmt
+    type_checker:
+      available: true
+      command: go vet
+    external_linter:
+      available: false
+      command: golangci-lint (not installed)
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Identify affected modules/packages
+    - Respect OSF boundary (framework/kernel, not product surface)
+  specs:
+    - Use Given/When/Then format for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+    - Place delta specs in domain-specific folders under specs/
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+    - Respect clean architecture layer boundaries (app → engine → platform)
+  tasks:
+    - Group tasks by phase (infrastructure, implementation, testing)
+    - Use hierarchical numbering (1.1, 1.2, etc.)
+    - Keep tasks small enough to complete in one session
+  apply:
+    - Follow existing Go conventions (interface-first, memory-store pattern)
+    - Tests in same package with _test suffix
+    - Use httptest for HTTP handler testing
+    - Use memory stores for unit tests, sqlmock for PostgreSQL tests
+    tdd: true
+    test_command: go test -cover -count=1 ./...
+  verify:
+    test_command: go test -cover -count=1 ./...
+    build_command: go build ./...
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas (large removals)
+    - Sync delta specs to main specs under specs/ directory

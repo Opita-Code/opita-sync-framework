@@ -1,12 +1,15 @@
 package postgres
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
 	"opita-sync-framework/internal/engine/proposal"
 )
+
+var _ proposal.Service = (*ProposalStore)(nil)
 
 type ProposalStore struct {
 	store *Store
@@ -16,12 +19,12 @@ func NewProposalStore(store *Store) *ProposalStore {
 	return &ProposalStore{store: store}
 }
 
-func (s *ProposalStore) CreateDraft(draft proposal.Draft) error {
+func (s *ProposalStore) CreateDraft(ctx context.Context, draft proposal.Draft) error {
 	raw, err := json.Marshal(draft)
 	if err != nil {
 		return fmt.Errorf("marshal proposal draft: %w", err)
 	}
-	_, err = s.store.DB.ExecContext(contextBackground(), `
+	_, err = s.store.DB.ExecContext(ctx, `
 		insert into proposal_drafts (proposal_draft_id, tenant_id, session_id, subject_id, payload, created_at)
 		values ($1, $2, $3, $4, $5, $6)
 	`, draft.ProposalDraftID, draft.TenantID, draft.SessionID, draft.SubjectID, raw, draft.CreatedAt)
@@ -31,9 +34,9 @@ func (s *ProposalStore) CreateDraft(draft proposal.Draft) error {
 	return nil
 }
 
-func (s *ProposalStore) GetDraft(proposalDraftID string) (proposal.Draft, bool, error) {
+func (s *ProposalStore) GetDraft(ctx context.Context, proposalDraftID string) (proposal.Draft, bool, error) {
 	var raw []byte
-	err := s.store.DB.QueryRowContext(contextBackground(), `select payload from proposal_drafts where proposal_draft_id = $1`, proposalDraftID).Scan(&raw)
+	err := s.store.DB.QueryRowContext(ctx, `select payload from proposal_drafts where proposal_draft_id = $1`, proposalDraftID).Scan(&raw)
 	if err != nil {
 		if isNoRows(err) {
 			return proposal.Draft{}, false, nil
@@ -47,12 +50,12 @@ func (s *ProposalStore) GetDraft(proposalDraftID string) (proposal.Draft, bool, 
 	return draft, true, nil
 }
 
-func (s *ProposalStore) SavePatchset(candidate proposal.PatchsetCandidate) error {
+func (s *ProposalStore) SavePatchset(ctx context.Context, candidate proposal.PatchsetCandidate) error {
 	raw, err := json.Marshal(candidate)
 	if err != nil {
 		return fmt.Errorf("marshal patchset candidate: %w", err)
 	}
-	_, err = s.store.DB.ExecContext(contextBackground(), `
+	_, err = s.store.DB.ExecContext(ctx, `
 		insert into patchset_candidates (patchset_candidate_id, proposal_draft_id, payload, created_at)
 		values ($1, $2, $3, $4)
 		on conflict (patchset_candidate_id) do update set payload = excluded.payload
@@ -63,9 +66,9 @@ func (s *ProposalStore) SavePatchset(candidate proposal.PatchsetCandidate) error
 	return nil
 }
 
-func (s *ProposalStore) GetPatchset(patchsetCandidateID string) (proposal.PatchsetCandidate, bool, error) {
+func (s *ProposalStore) GetPatchset(ctx context.Context, patchsetCandidateID string) (proposal.PatchsetCandidate, bool, error) {
 	var raw []byte
-	err := s.store.DB.QueryRowContext(contextBackground(), `select payload from patchset_candidates where patchset_candidate_id = $1`, patchsetCandidateID).Scan(&raw)
+	err := s.store.DB.QueryRowContext(ctx, `select payload from patchset_candidates where patchset_candidate_id = $1`, patchsetCandidateID).Scan(&raw)
 	if err != nil {
 		if isNoRows(err) {
 			return proposal.PatchsetCandidate{}, false, nil

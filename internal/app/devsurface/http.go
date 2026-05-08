@@ -1,6 +1,7 @@
 package devsurface
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,15 +11,16 @@ import (
 	"opita-sync-framework/internal/engine/events"
 	"opita-sync-framework/internal/engine/foundation"
 	"opita-sync-framework/internal/engine/maintenance"
+	"opita-sync-framework/internal/httputil"
 )
 
 type RunReader interface {
-	GetByExecutionID(executionID string) (foundation.FoundationRunResult, bool, error)
+	GetByExecutionID(ctx context.Context, executionID string) (foundation.FoundationRunResult, bool, error)
 }
 
 type MaintenanceStore interface {
-	Create(candidate maintenance.ActionCandidate) error
-	GetByID(id string) (maintenance.ActionCandidate, bool, error)
+	Create(ctx context.Context, candidate maintenance.ActionCandidate) error
+	GetByID(ctx context.Context, id string) (maintenance.ActionCandidate, bool, error)
 }
 
 type Handler struct {
@@ -28,7 +30,7 @@ type Handler struct {
 }
 
 type EventWriter interface {
-	Append(record events.Record) error
+	Append(ctx context.Context, record events.Record) error
 }
 
 type createMaintenanceRequest struct {
@@ -54,16 +56,16 @@ func (h *Handler) Routes() http.Handler {
 func (h *Handler) handleSemanticDebug(w http.ResponseWriter, r *http.Request) {
 	executionID := strings.TrimSpace(r.URL.Query().Get("execution_id"))
 	if executionID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "debug.missing_execution_id"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "debug.missing_execution_id"})
 		return
 	}
-	run, found, err := h.Runs.GetByExecutionID(executionID)
+	run, found, err := h.Runs.GetByExecutionID(r.Context(), executionID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "debug.lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "debug.lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "debug.not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "debug.not_found"})
 		return
 	}
 	view := maintenance.SemanticDebugView{
@@ -94,13 +96,13 @@ func (h *Handler) handleSemanticDebug(w http.ResponseWriter, r *http.Request) {
 			"debug_view_id": view.DebugViewID,
 		},
 	})
-	writeJSON(w, http.StatusOK, view)
+	httputil.WriteJSON(w, http.StatusOK, view)
 }
 
 func (h *Handler) handleCreateMaintenanceCandidate(w http.ResponseWriter, r *http.Request) {
 	var req createMaintenanceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "maintenance.invalid_json", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "maintenance.invalid_json", "message": err.Error()})
 		return
 	}
 	candidate := maintenance.ActionCandidate{
@@ -116,8 +118,8 @@ func (h *Handler) handleCreateMaintenanceCandidate(w http.ResponseWriter, r *htt
 		RequiresHumanReview:          true,
 		CreatedAt:                    time.Now().UTC(),
 	}
-	if err := h.Maintenance.Create(candidate); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "maintenance.create_failed", "message": err.Error()})
+	if err := h.Maintenance.Create(r.Context(), candidate); err != nil {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "maintenance.create_failed", "message": err.Error()})
 		return
 	}
 	_ = h.appendEvent(events.Record{
@@ -130,36 +132,30 @@ func (h *Handler) handleCreateMaintenanceCandidate(w http.ResponseWriter, r *htt
 			"action_type":                     candidate.ActionType,
 		},
 	})
-	writeJSON(w, http.StatusCreated, candidate)
+	httputil.WriteJSON(w, http.StatusCreated, candidate)
 }
 
 func (h *Handler) handleGetMaintenanceCandidate(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/v1/maintenance-actions/")
 	if id == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "maintenance.missing_id"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "maintenance.missing_id"})
 		return
 	}
-	candidate, found, err := h.Maintenance.GetByID(id)
+	candidate, found, err := h.Maintenance.GetByID(r.Context(), id)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "maintenance.lookup_failed", "message": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "maintenance.lookup_failed", "message": err.Error()})
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "maintenance.not_found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "maintenance.not_found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, candidate)
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
+	httputil.WriteJSON(w, http.StatusOK, candidate)
 }
 
 func (h *Handler) appendEvent(record events.Record) error {
 	if h.Events == nil {
 		return nil
 	}
-	return h.Events.Append(record)
+	return h.Events.Append(context.Background(), record)
 }

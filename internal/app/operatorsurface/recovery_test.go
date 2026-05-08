@@ -2,6 +2,7 @@ package operatorsurface_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -28,10 +29,10 @@ func TestCreateRecoveryCandidateForApprovalResume(t *testing.T) {
 	recoveryStore := memory.NewRecoveryStore()
 
 	exec := runtime.ExecutionRecord{ExecutionID: "exec-2", TenantID: "tenant-1", ContractID: "contract-2", ContractFingerprint: "fp-2", TraceID: "trace-2", State: runtime.ExecutionStateAwaitingApproval, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
-	_ = runtimeStore.CreateExecution(exec)
+	_ = runtimeStore.CreateExecution(context.Background(), exec)
 	approval := approvals.Request{ApprovalRequestID: "approval-2", ExecutionID: "exec-2", ContractID: "contract-2", TenantID: "tenant-1", TraceID: "trace-2", State: approvals.StateAwaitingApproval, Mode: "pre_execution", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
-	_ = approvalStore.Create(approval)
-	_ = runStore.Save(foundation.FoundationRunResult{
+	_ = approvalStore.Create(context.Background(), approval)
+	_ = runStore.Save(context.Background(), foundation.FoundationRunResult{
 		Contract:       intent.CompiledContract{ContractID: "contract-2", Fingerprint: "fp-2", TenantID: "tenant-1"},
 		Execution:      exec,
 		PolicyDecision: policy.DecisionRecord{PolicyDecisionID: "policy-2", Decision: policy.DecisionRequireApproval},
@@ -60,7 +61,7 @@ func TestExecuteRecoveryCandidateBlocksWhenNotReady(t *testing.T) {
 	runStore := memory.NewFoundationRunStore()
 	approvalStore := memory.NewApprovalStore()
 	recoveryStore := memory.NewRecoveryStore()
-	_ = runtimeStore.CreateExecution(runtime.ExecutionRecord{ExecutionID: "exec-missing", TenantID: "tenant-1", ContractID: "contract-blocked", ContractFingerprint: "fp-blocked", TraceID: "trace-blocked", State: runtime.ExecutionStateBlocked, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()})
+	_ = runtimeStore.CreateExecution(context.Background(), runtime.ExecutionRecord{ExecutionID: "exec-missing", TenantID: "tenant-1", ContractID: "contract-blocked", ContractFingerprint: "fp-blocked", TraceID: "trace-blocked", State: runtime.ExecutionStateBlocked, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()})
 	h := operatorsurface.NewHandler(runtimeStore, eventLog, runStore, approvalStore, recoveryStore)
 	candidate := inspection.RecoveryActionCandidate{
 		RecoveryActionCandidateID: "recovery-1",
@@ -73,7 +74,7 @@ func TestExecuteRecoveryCandidateBlocksWhenNotReady(t *testing.T) {
 		CreatedAt:                 time.Now().UTC(),
 		UpdatedAt:                 time.Now().UTC(),
 	}
-	_ = recoveryStore.Create(candidate)
+	_ = recoveryStore.Create(context.Background(), candidate)
 	req := httptest.NewRequest(http.MethodPost, "/v1/recovery-actions/recovery-1/execute", nil)
 	w := httptest.NewRecorder()
 	h.Routes().ServeHTTP(w, req)
@@ -88,7 +89,7 @@ func TestCreateRecoveryCandidateRequiresRequestedBySubjectID(t *testing.T) {
 	runStore := memory.NewFoundationRunStore()
 	approvalStore := memory.NewApprovalStore()
 	recoveryStore := memory.NewRecoveryStore()
-	_ = runtimeStore.CreateExecution(runtime.ExecutionRecord{ExecutionID: "exec-3", TenantID: "tenant-1", ContractID: "contract-3", ContractFingerprint: "fp-3", TraceID: "trace-3", State: runtime.ExecutionStateUnknownOutcome, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()})
+	_ = runtimeStore.CreateExecution(context.Background(), runtime.ExecutionRecord{ExecutionID: "exec-3", TenantID: "tenant-1", ContractID: "contract-3", ContractFingerprint: "fp-3", TraceID: "trace-3", State: runtime.ExecutionStateUnknownOutcome, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()})
 	h := operatorsurface.NewHandler(runtimeStore, eventLog, runStore, approvalStore, recoveryStore)
 	body, _ := json.Marshal(map[string]any{
 		"execution_id":     "exec-3",
@@ -108,7 +109,7 @@ func TestCreateUnsupportedRecoveryCandidateStartsBlocked(t *testing.T) {
 	runStore := memory.NewFoundationRunStore()
 	approvalStore := memory.NewApprovalStore()
 	recoveryStore := memory.NewRecoveryStore()
-	_ = runtimeStore.CreateExecution(runtime.ExecutionRecord{ExecutionID: "exec-4", TenantID: "tenant-1", ContractID: "contract-4", ContractFingerprint: "fp-4", TraceID: "trace-4", State: runtime.ExecutionStateBlocked, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()})
+	_ = runtimeStore.CreateExecution(context.Background(), runtime.ExecutionRecord{ExecutionID: "exec-4", TenantID: "tenant-1", ContractID: "contract-4", ContractFingerprint: "fp-4", TraceID: "trace-4", State: runtime.ExecutionStateBlocked, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()})
 	h := operatorsurface.NewHandler(runtimeStore, eventLog, runStore, approvalStore, recoveryStore)
 	body, _ := json.Marshal(map[string]any{
 		"execution_id":            "exec-4",
@@ -136,7 +137,7 @@ func TestExecuteAcknowledgeUnknownPreservesUnknownOutcome(t *testing.T) {
 	runStore := memory.NewFoundationRunStore()
 	approvalStore := memory.NewApprovalStore()
 	recoveryStore := memory.NewRecoveryStore()
-	_ = runtimeStore.CreateExecution(runtime.ExecutionRecord{ExecutionID: "exec-5", TenantID: "tenant-1", ContractID: "contract-5", ContractFingerprint: "fp-5", TraceID: "trace-5", State: runtime.ExecutionStateUnknownOutcome, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()})
+	_ = runtimeStore.CreateExecution(context.Background(), runtime.ExecutionRecord{ExecutionID: "exec-5", TenantID: "tenant-1", ContractID: "contract-5", ContractFingerprint: "fp-5", TraceID: "trace-5", State: runtime.ExecutionStateUnknownOutcome, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()})
 	h := operatorsurface.NewHandler(runtimeStore, eventLog, runStore, approvalStore, recoveryStore)
 	body, _ := json.Marshal(map[string]any{
 		"execution_id":            "exec-5",
@@ -159,7 +160,7 @@ func TestExecuteAcknowledgeUnknownPreservesUnknownOutcome(t *testing.T) {
 	if execW.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", execW.Code, execW.Body.String())
 	}
-	exec, found, err := runtimeStore.GetExecution("exec-5")
+	exec, found, err := runtimeStore.GetExecution(context.Background(), "exec-5")
 	if err != nil || !found {
 		t.Fatalf("expected execution, found=%v err=%v", found, err)
 	}
@@ -174,7 +175,7 @@ func TestExecuteManualCompensationFromFailedTransitionsToCompensationPending(t *
 	runStore := memory.NewFoundationRunStore()
 	approvalStore := memory.NewApprovalStore()
 	recoveryStore := memory.NewRecoveryStore()
-	_ = runtimeStore.CreateExecution(runtime.ExecutionRecord{ExecutionID: "exec-6", TenantID: "tenant-1", ContractID: "contract-6", ContractFingerprint: "fp-6", TraceID: "trace-6", State: runtime.ExecutionStateFailed, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()})
+	_ = runtimeStore.CreateExecution(context.Background(), runtime.ExecutionRecord{ExecutionID: "exec-6", TenantID: "tenant-1", ContractID: "contract-6", ContractFingerprint: "fp-6", TraceID: "trace-6", State: runtime.ExecutionStateFailed, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()})
 	h := operatorsurface.NewHandler(runtimeStore, eventLog, runStore, approvalStore, recoveryStore)
 	body, _ := json.Marshal(map[string]any{
 		"execution_id":            "exec-6",
@@ -197,7 +198,7 @@ func TestExecuteManualCompensationFromFailedTransitionsToCompensationPending(t *
 	if execW.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", execW.Code, execW.Body.String())
 	}
-	exec, found, err := runtimeStore.GetExecution("exec-6")
+	exec, found, err := runtimeStore.GetExecution(context.Background(), "exec-6")
 	if err != nil || !found {
 		t.Fatalf("expected execution, found=%v err=%v", found, err)
 	}
@@ -213,9 +214,9 @@ func TestOperatorWorkspaceShowsBlockedStateClearly(t *testing.T) {
 	approvalStore := memory.NewApprovalStore()
 	recoveryStore := memory.NewRecoveryStore()
 	exec := runtime.ExecutionRecord{ExecutionID: "exec-7", TenantID: "tenant-1", ContractID: "contract-7", ContractFingerprint: "fp-7", TraceID: "trace-7", State: runtime.ExecutionStateBlocked, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
-	_ = runtimeStore.CreateExecution(exec)
-	_ = runStore.Save(foundation.FoundationRunResult{Contract: intent.CompiledContract{ContractID: "contract-7", Fingerprint: "fp-7", TenantID: "tenant-1"}, Execution: exec, PolicyDecision: policy.DecisionRecord{PolicyDecisionID: "policy-7", Decision: policy.DecisionDenyBlock}, Resolution: registry.ResolutionResult{CapabilityManifestRef: "manifest://capability.execution.default", BindingID: "binding-7", ProviderRef: "provider://z"}})
-	_ = eventLog.Append(events.Record{EventID: "event-7", EventType: "policy.decision_recorded", ExecutionID: "exec-7", TenantID: "tenant-1", TraceID: "trace-7", OccurredAt: time.Now().UTC()})
+	_ = runtimeStore.CreateExecution(context.Background(), exec)
+	_ = runStore.Save(context.Background(), foundation.FoundationRunResult{Contract: intent.CompiledContract{ContractID: "contract-7", Fingerprint: "fp-7", TenantID: "tenant-1"}, Execution: exec, PolicyDecision: policy.DecisionRecord{PolicyDecisionID: "policy-7", Decision: policy.DecisionDenyBlock}, Resolution: registry.ResolutionResult{CapabilityManifestRef: "manifest://capability.execution.default", BindingID: "binding-7", ProviderRef: "provider://z"}})
+	_ = eventLog.Append(context.Background(), events.Record{EventID: "event-7", EventType: "policy.decision_recorded", ExecutionID: "exec-7", TenantID: "tenant-1", TraceID: "trace-7", OccurredAt: time.Now().UTC()})
 	h := operatorsurface.NewHandler(runtimeStore, eventLog, runStore, approvalStore, recoveryStore)
 	req := httptest.NewRequest(http.MethodGet, "/v1/operator/executions/exec-7/workspace", nil)
 	w := httptest.NewRecorder()

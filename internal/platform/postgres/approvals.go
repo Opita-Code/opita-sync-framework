@@ -1,11 +1,14 @@
 package postgres
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	"opita-sync-framework/internal/engine/approvals"
 )
+
+var _ approvals.Service = (*ApprovalStore)(nil)
 
 type ApprovalStore struct {
 	store *Store
@@ -15,7 +18,7 @@ func NewApprovalStore(store *Store) *ApprovalStore {
 	return &ApprovalStore{store: store}
 }
 
-func (s *ApprovalStore) Create(request approvals.Request) error {
+func (s *ApprovalStore) Create(ctx context.Context, request approvals.Request) error {
 	raw, err := json.Marshal(request)
 	if err != nil {
 		return fmt.Errorf("marshal approval request: %w", err)
@@ -30,7 +33,7 @@ func (s *ApprovalStore) Create(request approvals.Request) error {
 	return nil
 }
 
-func (s *ApprovalStore) GetByID(approvalRequestID string) (approvals.Request, bool, error) {
+func (s *ApprovalStore) GetByID(ctx context.Context, approvalRequestID string) (approvals.Request, bool, error) {
 	var raw []byte
 	err := s.store.DB.QueryRowContext(contextBackground(), `select payload from approval_requests where approval_request_id = $1`, approvalRequestID).Scan(&raw)
 	if err != nil {
@@ -46,8 +49,8 @@ func (s *ApprovalStore) GetByID(approvalRequestID string) (approvals.Request, bo
 	return request, true, nil
 }
 
-func (s *ApprovalStore) Decide(approvalRequestID string, decision approvals.Decision) (approvals.Request, error) {
-	request, found, err := s.GetByID(approvalRequestID)
+func (s *ApprovalStore) Decide(ctx context.Context, approvalRequestID string, decision approvals.Decision) (approvals.Request, error) {
+	request, found, err := s.GetByID(ctx, approvalRequestID)
 	if err != nil {
 		return approvals.Request{}, err
 	}

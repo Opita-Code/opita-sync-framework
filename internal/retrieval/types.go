@@ -1,5 +1,7 @@
 package retrieval
 
+import "context"
+
 type Document struct {
 	DocumentRef         string   `json:"document_ref"`
 	TenantID            string   `json:"tenant_id"`
@@ -24,6 +26,6 @@ type Match struct {
 }
 
 type Service interface {
-	Index(document Document) error
-	Search(query Query) ([]Match, error)
+	Index(ctx context.Context, document Document) error
+	Search(ctx context.Context, query Query) ([]Match, error)
 }

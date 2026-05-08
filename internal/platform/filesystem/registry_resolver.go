@@ -1,14 +1,18 @@
 package filesystem
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"opita-sync-framework/internal/engine/registry"
 )
+
+var _ registry.Resolver = (*RegistryResolver)(nil)
 
 type RegistryResolver struct {
 	capabilities map[string]capabilityDocument
@@ -67,7 +71,7 @@ func NewRegistryResolver(root string) (*RegistryResolver, error) {
 			return nil, fmt.Errorf("read manifest %s: %w", file, err)
 		}
 		var doc capabilityDocument
-		if err := json.Unmarshal(raw, &doc); err != nil {
+		if err := yaml.Unmarshal(raw, &doc); err != nil {
 			return nil, fmt.Errorf("parse manifest %s: %w", file, err)
 		}
 		if strings.TrimSpace(doc.Metadata.ID) == "" {
@@ -78,7 +82,7 @@ func NewRegistryResolver(root string) (*RegistryResolver, error) {
 	return resolver, nil
 }
 
-func (r *RegistryResolver) Resolve(req registry.ResolutionRequest) (registry.ResolutionResult, error) {
+func (r *RegistryResolver) Resolve(ctx context.Context, req registry.ResolutionRequest) (registry.ResolutionResult, error) {
 	doc, ok := r.capabilities[req.CapabilityID]
 	if !ok {
 		return registry.ResolutionResult{}, fmt.Errorf("capability manifest not found: %s", req.CapabilityID)

@@ -1,6 +1,9 @@
 package tenant
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type State string
 
@@ -104,6 +107,6 @@ type BootstrapRecord struct {
 }
 
 type Store interface {
-	Save(record BootstrapRecord) error
-	GetByTenantID(tenantID string) (BootstrapRecord, bool, error)
+	Save(ctx context.Context, record BootstrapRecord) error
+	GetByTenantID(ctx context.Context, tenantID string) (BootstrapRecord, bool, error)
 }

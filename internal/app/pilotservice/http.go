@@ -1,17 +1,18 @@
 package pilotservice
 
 import (
-	"encoding/json"
+	"context"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
 
 	"opita-sync-framework/internal/engine/events"
+	"opita-sync-framework/internal/httputil"
 )
 
 type EventReader interface {
-	Records() []events.Record
+	Records(ctx context.Context) []events.Record
 }
 
 type Handler struct {
@@ -95,11 +96,11 @@ func (h *Handler) Routes() http.Handler {
 
 func (h *Handler) handleScorecard(w http.ResponseWriter, r *http.Request) {
 	if h.Events == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "pilot.events_not_ready"})
+		httputil.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "pilot.events_not_ready"})
 		return
 	}
 	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
-	records := h.Events.Records()
+	records := h.Events.Records(context.Background())
 	if tenantID != "" {
 		filtered := make([]events.Record, 0, len(records))
 		for _, record := range records {
@@ -110,16 +111,16 @@ func (h *Handler) handleScorecard(w http.ResponseWriter, r *http.Request) {
 		records = filtered
 	}
 	scorecard := buildScorecard(records, tenantID)
-	writeJSON(w, http.StatusOK, scorecard)
+	httputil.WriteJSON(w, http.StatusOK, scorecard)
 }
 
 func (h *Handler) handleScenarioScorecards(w http.ResponseWriter, r *http.Request) {
 	if h.Events == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "pilot.events_not_ready"})
+		httputil.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "pilot.events_not_ready"})
 		return
 	}
 	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
-	records := h.Events.Records()
+	records := h.Events.Records(context.Background())
 	if tenantID != "" {
 		filtered := make([]events.Record, 0, len(records))
 		for _, record := range records {
@@ -144,7 +145,7 @@ func (h *Handler) handleScenarioScorecards(w http.ResponseWriter, r *http.Reques
 		out = append(out, scorecard)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ScenarioID < out[j].ScenarioID })
-	writeJSON(w, http.StatusOK, map[string]any{
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{
 		"tenant_id": tenantID,
 		"scenarios": out,
 		"boundary":  "scenario_scorecards_derived_from_trace_id",
@@ -153,12 +154,12 @@ func (h *Handler) handleScenarioScorecards(w http.ResponseWriter, r *http.Reques
 
 func (h *Handler) handleIncidentCandidates(w http.ResponseWriter, r *http.Request) {
 	if h.Events == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "pilot.events_not_ready"})
+		httputil.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "pilot.events_not_ready"})
 		return
 	}
 	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
 	scenarioID := strings.TrimSpace(r.URL.Query().Get("scenario_id"))
-	records := h.Events.Records()
+	records := h.Events.Records(context.Background())
 	filtered := make([]events.Record, 0, len(records))
 	for _, record := range records {
 		if tenantID != "" && record.TenantID != tenantID {
@@ -170,7 +171,7 @@ func (h *Handler) handleIncidentCandidates(w http.ResponseWriter, r *http.Reques
 		filtered = append(filtered, record)
 	}
 	candidates := buildIncidentCandidates(filtered)
-	writeJSON(w, http.StatusOK, map[string]any{
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{
 		"tenant_id":   tenantID,
 		"scenario_id": scenarioID,
 		"candidates":  candidates,
@@ -503,10 +504,4 @@ func payloadStringSlice(payload map[string]any, key string) []string {
 	default:
 		return nil
 	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
 }

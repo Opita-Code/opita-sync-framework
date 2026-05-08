@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"strings"
 	"sync"
 
@@ -16,14 +17,24 @@ func NewRetrievalStore() *RetrievalStore {
 	return &RetrievalStore{documents: map[string]retrieval.Document{}}
 }
 
-func (s *RetrievalStore) Index(document retrieval.Document) error {
+func (s *RetrievalStore) Index(ctx context.Context, document retrieval.Document) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.documents[document.DocumentRef] = document
 	return nil
 }
 
-func (s *RetrievalStore) Search(query retrieval.Query) ([]retrieval.Match, error) {
+func (s *RetrievalStore) Search(ctx context.Context, query retrieval.Query) ([]retrieval.Match, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	matches := make([]retrieval.Match, 0)

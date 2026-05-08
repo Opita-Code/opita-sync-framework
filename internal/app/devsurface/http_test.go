@@ -2,6 +2,7 @@ package devsurface_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -21,7 +22,7 @@ import (
 func seededRunStore(t *testing.T) *memory.FoundationRunStore {
 	t.Helper()
 	runStore := memory.NewFoundationRunStore()
-	_ = runStore.Save(foundation.FoundationRunResult{
+	_ = runStore.Save(context.Background(), foundation.FoundationRunResult{
 		Contract:       intent.CompiledContract{ContractID: "contract-1", Fingerprint: "fp-1", TenantID: "tenant-1"},
 		Execution:      runtime.ExecutionRecord{ExecutionID: "exec-1", TenantID: "tenant-1", ContractID: "contract-1", ContractFingerprint: "fp-1", TraceID: "trace-1", State: runtime.ExecutionStateExecutionReleased, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
 		PolicyDecision: policy.DecisionRecord{PolicyDecisionID: "policy-1", Decision: policy.DecisionAllow},

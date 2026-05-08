@@ -1,6 +1,7 @@
 package pilotservice_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -30,7 +31,7 @@ func TestPilotScorecardAggregatesMetricsByTenant(t *testing.T) {
 		{EventID: "12", EventType: "execution.created", TenantID: "tenant-beta-governance", ExecutionID: "exec-2", OccurredAt: base.Add(90 * time.Second), Payload: map[string]any{"runtime_state": "blocked"}},
 	}
 	for _, record := range records {
-		if err := eventLog.Append(record); err != nil {
+		if err := eventLog.Append(context.Background(), record); err != nil {
 			t.Fatalf("append event: %v", err)
 		}
 	}
@@ -74,7 +75,7 @@ func TestPilotScenarioScorecardsGroupByTraceID(t *testing.T) {
 		{EventID: "10", EventType: "execution.created", TenantID: "tenant-alpha-ops", TraceID: "trace-alpha-02", ExecutionID: "exec-2", OccurredAt: base.Add(90 * time.Second), Payload: map[string]any{"runtime_state": "blocked"}},
 	}
 	for _, record := range records {
-		if err := eventLog.Append(record); err != nil {
+		if err := eventLog.Append(context.Background(), record); err != nil {
 			t.Fatalf("append event: %v", err)
 		}
 	}
@@ -109,7 +110,7 @@ func TestPilotIncidentCandidatesDeriveFromCanonicalEvents(t *testing.T) {
 		{EventID: "3", EventType: "approval.fingerprint_mismatch", TenantID: "tenant-alpha-ops", TraceID: "trace-alpha-01", ExecutionID: "exec-1", ApprovalRequestID: "approval-1", OccurredAt: base.Add(20 * time.Second)},
 	}
 	for _, record := range records {
-		if err := eventLog.Append(record); err != nil {
+		if err := eventLog.Append(context.Background(), record); err != nil {
 			t.Fatalf("append event: %v", err)
 		}
 	}
@@ -145,7 +146,7 @@ func TestPilotScorecardCapturesAccessDomainMetrics(t *testing.T) {
 		{EventID: "9", EventType: "tenant_access.delegation_revoked", TenantID: "tenant-gamma-access", TraceID: "trace-gamma-access-03", OccurredAt: base.Add(60 * time.Second)},
 	}
 	for _, record := range records {
-		if err := eventLog.Append(record); err != nil {
+		if err := eventLog.Append(context.Background(), record); err != nil {
 			t.Fatalf("append event: %v", err)
 		}
 	}

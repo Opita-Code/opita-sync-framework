@@ -8,6 +8,8 @@ import (
 	"opita-sync-framework/internal/engine/intent"
 )
 
+var _ intent.ContractRepository = (*ContractRepository)(nil)
+
 type ContractRepository struct {
 	store *Store
 }

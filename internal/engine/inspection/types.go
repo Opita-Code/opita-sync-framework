@@ -1,6 +1,9 @@
 package inspection
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type ExecutionInspectionView struct {
 	InspectionViewID      string    `json:"inspection_view_id"`
@@ -65,8 +68,8 @@ type RecoveryActionCandidate struct {
 }
 
 type RecoveryStore interface {
-	Create(candidate RecoveryActionCandidate) error
-	GetByID(recoveryActionCandidateID string) (RecoveryActionCandidate, bool, error)
-	ListByExecution(executionID string) ([]RecoveryActionCandidate, error)
-	Update(candidate RecoveryActionCandidate) error
+	Create(ctx context.Context, candidate RecoveryActionCandidate) error
+	GetByID(ctx context.Context, recoveryActionCandidateID string) (RecoveryActionCandidate, bool, error)
+	ListByExecution(ctx context.Context, executionID string) ([]RecoveryActionCandidate, error)
+	Update(ctx context.Context, candidate RecoveryActionCandidate) error
 }

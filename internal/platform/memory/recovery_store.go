@@ -1,11 +1,14 @@
 package memory
 
 import (
+	"context"
 	"errors"
 	"sync"
 
 	"opita-sync-framework/internal/engine/inspection"
 )
+
+var _ inspection.RecoveryStore = (*RecoveryStore)(nil)
 
 type RecoveryStore struct {
 	mu         sync.RWMutex
@@ -16,7 +19,12 @@ func NewRecoveryStore() *RecoveryStore {
 	return &RecoveryStore{candidates: map[string]inspection.RecoveryActionCandidate{}}
 }
 
-func (s *RecoveryStore) Create(candidate inspection.RecoveryActionCandidate) error {
+func (s *RecoveryStore) Create(ctx context.Context, candidate inspection.RecoveryActionCandidate) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, exists := s.candidates[candidate.RecoveryActionCandidateID]; exists {
@@ -26,14 +34,24 @@ func (s *RecoveryStore) Create(candidate inspection.RecoveryActionCandidate) err
 	return nil
 }
 
-func (s *RecoveryStore) GetByID(id string) (inspection.RecoveryActionCandidate, bool, error) {
+func (s *RecoveryStore) GetByID(ctx context.Context, id string) (inspection.RecoveryActionCandidate, bool, error) {
+	select {
+	case <-ctx.Done():
+		return inspection.RecoveryActionCandidate{}, false, ctx.Err()
+	default:
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	candidate, found := s.candidates[id]
 	return candidate, found, nil
 }
 
-func (s *RecoveryStore) ListByExecution(executionID string) ([]inspection.RecoveryActionCandidate, error) {
+func (s *RecoveryStore) ListByExecution(ctx context.Context, executionID string) ([]inspection.RecoveryActionCandidate, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]inspection.RecoveryActionCandidate, 0)
@@ -45,7 +63,12 @@ func (s *RecoveryStore) ListByExecution(executionID string) ([]inspection.Recove
 	return out, nil
 }
 
-func (s *RecoveryStore) Update(candidate inspection.RecoveryActionCandidate) error {
+func (s *RecoveryStore) Update(ctx context.Context, candidate inspection.RecoveryActionCandidate) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, exists := s.candidates[candidate.RecoveryActionCandidateID]; !exists {

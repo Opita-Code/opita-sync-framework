@@ -1,6 +1,9 @@
 package preview
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type Status string
 
@@ -50,8 +53,8 @@ type Result struct {
 }
 
 type Service interface {
-	CreateCandidate(candidate Candidate) error
-	GetCandidate(previewCandidateID string) (Candidate, bool, error)
-	SaveResult(result Result) error
-	ListResults(previewCandidateID string) ([]Result, error)
+	CreateCandidate(ctx context.Context, candidate Candidate) error
+	GetCandidate(ctx context.Context, previewCandidateID string) (Candidate, bool, error)
+	SaveResult(ctx context.Context, result Result) error
+	ListResults(ctx context.Context, previewCandidateID string) ([]Result, error)
 }

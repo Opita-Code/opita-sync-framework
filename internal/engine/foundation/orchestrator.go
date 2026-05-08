@@ -3,6 +3,7 @@ package foundation
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync/atomic"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 )
 
 type FoundationOrchestrator struct {
+	Logger    *slog.Logger
 	Compiler  intentCompiler
 	Policy    policy.PolicyEngine
 	Runtime   runtime.RuntimeService
@@ -45,7 +47,7 @@ func (o *FoundationOrchestrator) Run(ctx context.Context, input intent.IntentInp
 		return FoundationRunResult{}, err
 	}
 
-	resolution, err := o.Registry.Resolve(registry.ResolutionRequest{
+	resolution, err := o.Registry.Resolve(ctx, registry.ResolutionRequest{
 		CapabilityID:          capabilityIDForContract(contract),
 		ContractSchemaVersion: contract.ContractVersion,
 		SupportedResultType:   string(contract.TipoResultadoEsperado),
@@ -61,7 +63,7 @@ func (o *FoundationOrchestrator) Run(ctx context.Context, input intent.IntentInp
 		traceID = fmt.Sprintf("trace-%s", executionID)
 	}
 
-	decision, err := o.Policy.Evaluate(policy.Input{
+	decision, err := o.Policy.Evaluate(ctx, policy.Input{
 		TenantID:              contract.TenantID,
 		ContractID:            contract.ContractID,
 		ExecutionID:           executionID,
@@ -93,7 +95,7 @@ func (o *FoundationOrchestrator) Run(ctx context.Context, input intent.IntentInp
 			CreatedAt:                 time.Now().UTC(),
 			UpdatedAt:                 time.Now().UTC(),
 		}
-		if err := o.Approvals.Create(record); err != nil {
+		if err := o.Approvals.Create(ctx, record); err != nil {
 			return FoundationRunResult{}, fmt.Errorf("create approval request: %w", err)
 		}
 		approvalRecord = &record
@@ -112,7 +114,7 @@ func (o *FoundationOrchestrator) Run(ctx context.Context, input intent.IntentInp
 		UpdatedAt:           time.Now().UTC(),
 	}
 
-	if err := o.Runtime.CreateExecution(execution); err != nil {
+	if err := o.Runtime.CreateExecution(ctx, execution); err != nil {
 		return FoundationRunResult{}, fmt.Errorf("create execution: %w", err)
 	}
 
@@ -207,7 +209,7 @@ func (o *FoundationOrchestrator) Run(ctx context.Context, input intent.IntentInp
 	}
 
 	for _, record := range eventsToAppend {
-		if err := o.Events.Append(record); err != nil {
+		if err := o.Events.Append(ctx, record); err != nil {
 			return FoundationRunResult{}, fmt.Errorf("append event: %w", err)
 		}
 	}
@@ -221,7 +223,7 @@ func (o *FoundationOrchestrator) Run(ctx context.Context, input intent.IntentInp
 		Approval:       approvalRecord,
 	}
 
-	if err := o.Runs.Save(result); err != nil {
+	if err := o.Runs.Save(ctx, result); err != nil {
 		return FoundationRunResult{}, fmt.Errorf("store foundation run: %w", err)
 	}
 

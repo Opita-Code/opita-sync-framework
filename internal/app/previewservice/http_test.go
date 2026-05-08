@@ -11,6 +11,7 @@ import (
 	"opita-sync-framework/internal/engine/preview"
 	"opita-sync-framework/internal/engine/simulation"
 	"opita-sync-framework/internal/platform/memory"
+	"opita-sync-framework/internal/testutil"
 )
 
 func TestCreatePreviewReturnsCandidateAndSimulations(t *testing.T) {
@@ -77,7 +78,7 @@ func TestGetReadablePreviewReturnsDiffRiskAndApprovals(t *testing.T) {
 		t.Fatalf("unmarshal create response: %v", err)
 	}
 	previewCandidate := createResp["preview_candidate"].(map[string]any)
-	previewID := getStringField(t, previewCandidate, "preview_candidate_id", "PreviewCandidateID")
+	previewID := testutil.GetStringField(t, previewCandidate, "preview_candidate_id", "PreviewCandidateID")
 	readableReq := httptest.NewRequest(http.MethodGet, "/v1/readable-previews/"+previewID, nil)
 	readableW := httptest.NewRecorder()
 	handler.Routes().ServeHTTP(readableW, readableReq)
@@ -116,16 +117,3 @@ func TestListSimulationsRequiresPreviewID(t *testing.T) {
 }
 
 var _ preview.Service = (*memory.PreviewStore)(nil)
-
-func getStringField(t *testing.T, payload map[string]any, keys ...string) string {
-	t.Helper()
-	for _, key := range keys {
-		if value, ok := payload[key]; ok && value != nil {
-			if s, ok := value.(string); ok {
-				return s
-			}
-		}
-	}
-	t.Fatalf("missing string field, keys=%v payload=%#v", keys, payload)
-	return ""
-}

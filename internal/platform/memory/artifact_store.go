@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"errors"
 	"sync"
 
@@ -16,14 +17,24 @@ func NewArtifactStore() *ArtifactStore {
 	return &ArtifactStore{artifacts: map[string]storage.GetResponse{}}
 }
 
-func (s *ArtifactStore) Put(req storage.PutRequest) (storage.Artifact, error) {
+func (s *ArtifactStore) Put(ctx context.Context, req storage.PutRequest) (storage.Artifact, error) {
+	select {
+	case <-ctx.Done():
+		return storage.Artifact{}, ctx.Err()
+	default:
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.artifacts[req.Artifact.ArtifactRef] = storage.GetResponse{Artifact: req.Artifact, Body: req.Body}
 	return req.Artifact, nil
 }
 
-func (s *ArtifactStore) Get(artifactRef string) (storage.GetResponse, bool, error) {
+func (s *ArtifactStore) Get(ctx context.Context, artifactRef string) (storage.GetResponse, bool, error) {
+	select {
+	case <-ctx.Done():
+		return storage.GetResponse{}, false, ctx.Err()
+	default:
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	resp, found := s.artifacts[artifactRef]
@@ -32,8 +43,8 @@ func (s *ArtifactStore) Get(artifactRef string) (storage.GetResponse, bool, erro
 
 var _ storage.Service = (*ArtifactStore)(nil)
 
-func (s *ArtifactStore) MustGet(artifactRef string) (storage.GetResponse, error) {
-	resp, found, _ := s.Get(artifactRef)
+func (s *ArtifactStore) MustGet(ctx context.Context, artifactRef string) (storage.GetResponse, error) {
+	resp, found, _ := s.Get(ctx, artifactRef)
 	if !found {
 		return storage.GetResponse{}, errors.New("artifact not found")
 	}

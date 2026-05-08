@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -13,7 +14,7 @@ func TestRegistryResolverResolveSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected resolver, got error: %v", err)
 	}
-	result, err := resolver.Resolve(registry.ResolutionRequest{
+	result, err := resolver.Resolve(context.Background(), registry.ResolutionRequest{
 		CapabilityID:          "capability.plan.default",
 		ContractSchemaVersion: "1.0",
 		SupportedResultType:   "plan",
@@ -39,7 +40,7 @@ func TestRegistryResolverRejectsIncompatibleContractVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected resolver, got error: %v", err)
 	}
-	_, err = resolver.Resolve(registry.ResolutionRequest{
+	_, err = resolver.Resolve(context.Background(), registry.ResolutionRequest{
 		CapabilityID:          "capability.plan.default",
 		ContractSchemaVersion: "2.0",
 		SupportedResultType:   "plan",

@@ -1,11 +1,14 @@
 package postgres
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	"opita-sync-framework/internal/engine/preview"
 )
+
+var _ preview.Service = (*PreviewStore)(nil)
 
 type PreviewStore struct {
 	store *Store
@@ -15,12 +18,12 @@ func NewPreviewStore(store *Store) *PreviewStore {
 	return &PreviewStore{store: store}
 }
 
-func (s *PreviewStore) CreateCandidate(candidate preview.Candidate) error {
+func (s *PreviewStore) CreateCandidate(ctx context.Context, candidate preview.Candidate) error {
 	raw, err := json.Marshal(candidate)
 	if err != nil {
 		return fmt.Errorf("marshal preview candidate: %w", err)
 	}
-	_, err = s.store.DB.ExecContext(contextBackground(), `
+	_, err = s.store.DB.ExecContext(ctx, `
 		insert into preview_candidates (preview_candidate_id, tenant_id, session_id, subject_id, contract_id, execution_id, payload, created_at)
 		values ($1, $2, $3, $4, $5, $6, $7, $8)
 	`, candidate.PreviewCandidateID, candidate.TenantID, candidate.SessionID, candidate.SubjectID, candidate.ContractID, candidate.ExecutionID, raw, candidate.CreatedAt)
@@ -30,9 +33,9 @@ func (s *PreviewStore) CreateCandidate(candidate preview.Candidate) error {
 	return nil
 }
 
-func (s *PreviewStore) GetCandidate(previewCandidateID string) (preview.Candidate, bool, error) {
+func (s *PreviewStore) GetCandidate(ctx context.Context, previewCandidateID string) (preview.Candidate, bool, error) {
 	var raw []byte
-	err := s.store.DB.QueryRowContext(contextBackground(), `select payload from preview_candidates where preview_candidate_id = $1`, previewCandidateID).Scan(&raw)
+	err := s.store.DB.QueryRowContext(ctx, `select payload from preview_candidates where preview_candidate_id = $1`, previewCandidateID).Scan(&raw)
 	if err != nil {
 		if isNoRows(err) {
 			return preview.Candidate{}, false, nil
@@ -46,12 +49,12 @@ func (s *PreviewStore) GetCandidate(previewCandidateID string) (preview.Candidat
 	return candidate, true, nil
 }
 
-func (s *PreviewStore) SaveResult(result preview.Result) error {
+func (s *PreviewStore) SaveResult(ctx context.Context, result preview.Result) error {
 	raw, err := json.Marshal(result)
 	if err != nil {
 		return fmt.Errorf("marshal simulation result: %w", err)
 	}
-	_, err = s.store.DB.ExecContext(contextBackground(), `
+	_, err = s.store.DB.ExecContext(ctx, `
 		insert into simulation_results (simulation_result_id, preview_candidate_id, family, payload, created_at)
 		values ($1, $2, $3, $4, $5)
 		on conflict (simulation_result_id) do update set payload = excluded.payload
@@ -62,8 +65,8 @@ func (s *PreviewStore) SaveResult(result preview.Result) error {
 	return nil
 }
 
-func (s *PreviewStore) ListResults(previewCandidateID string) ([]preview.Result, error) {
-	rows, err := s.store.DB.QueryContext(contextBackground(), `select payload from simulation_results where preview_candidate_id = $1 order by created_at asc`, previewCandidateID)
+func (s *PreviewStore) ListResults(ctx context.Context, previewCandidateID string) ([]preview.Result, error) {
+	rows, err := s.store.DB.QueryContext(ctx, `select payload from simulation_results where preview_candidate_id = $1 order by created_at asc`, previewCandidateID)
 	if err != nil {
 		return nil, fmt.Errorf("select simulation results: %w", err)
 	}

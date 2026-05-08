@@ -1,6 +1,9 @@
 package events
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type Record struct {
 	EventID             string
@@ -25,6 +28,6 @@ type Record struct {
 }
 
 type EventLog interface {
-	Append(record Record) error
-	Records() []Record
+	Append(ctx context.Context, record Record) error
+	Records(ctx context.Context) []Record
 }
