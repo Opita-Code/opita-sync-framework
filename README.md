@@ -1,7 +1,8 @@
-# Opita Sync Framework
+# Opita Sync Framework (OSF)
 
-> Repo scope: **framework/kernel reusable**.  
-> Product scope lives separately in the sibling repo: **Opita Sync**.
+> 🇨🇴 Repo scope: **framework/kernel reusable**. El producto vive en el repo hermano **Opita Sync**.
+>
+> 🇺🇸 **Reusable governance kernel.** The product lives separately in the sibling repo **Opita Sync**.
 
 ## Qué es esto
 
